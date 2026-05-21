@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { TeacherNav } from '@/components/shared/teacher-nav';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -44,6 +45,7 @@ import { formatGradeLabel } from '@/lib/constants/grades';
 import { useAuth } from '@/contexts/AuthContext';
 
 export default function TeacherDashboardPage() {
+  const router = useRouter();
   const { user } = useAuth();
   const [isLoading, setIsLoading] = useState(true);
   const [stats, setStats] = useState({
@@ -341,9 +343,11 @@ export default function TeacherDashboardPage() {
                               <Play className="w-4 h-4 mr-2" />
                               Start Exam
                             </DropdownMenuItem>
-                            <DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => router.push(`/teacher/exams/${exam.id}/edit`)}
+                            >
                               <Edit className="w-4 h-4 mr-2" />
-                              Edit Exam
+                              Edit Ujian
                             </DropdownMenuItem>
                             <DropdownMenuItem
                               className="text-destructive focus:text-destructive"

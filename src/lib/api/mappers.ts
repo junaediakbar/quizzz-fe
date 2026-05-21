@@ -17,6 +17,7 @@ import {
   StudentDashboardStats,
   ActivityItem,
 } from '@/lib/types';
+import { clampSeconds } from '@/lib/utils';
 
 const toDate = (v: unknown): Date => {
   if (v instanceof Date) return v;
@@ -228,7 +229,7 @@ export function mapExamResult(raw: Record<string, unknown>): ExamResult {
     percentage: pct,
     passed: Boolean(raw.passed),
     answers,
-    timeSpent: Number(raw.time_spent ?? raw.timeSpent ?? 0),
+    timeSpent: clampSeconds(Number(raw.time_spent ?? raw.timeSpent ?? 0)),
     submittedAt: toDate(raw.submitted_at ?? raw.submittedAt),
     gradedAt: raw.graded_at ? toDate(raw.graded_at) : raw.gradedAt ? toDate(raw.gradedAt) : undefined,
     resultsVisible:

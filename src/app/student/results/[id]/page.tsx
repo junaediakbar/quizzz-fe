@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { cn } from '@/lib/utils';
+import { cn, formatDurationMinutes, formatNumber, formatPercent } from '@/lib/utils';
 import { formatGradeLabel } from '@/lib/constants/grades';
 import {
   ArrowLeft,
@@ -91,28 +91,28 @@ export default function StudentResultDetailPage() {
   const visible = result.resultsVisible !== false;
 
   return (
-    <div className="min-h-screen bg-muted/20">
-      <header className="sticky top-0 z-10 border-b bg-background/95 backdrop-blur">
-        <div className="max-w-4xl mx-auto px-4 py-4 flex items-center gap-3">
-          <Button variant="ghost" size="icon" asChild>
+    <>
+      <div className="border-b bg-background/80">
+        <div className="mx-auto flex max-w-4xl items-center gap-3 px-4 py-3">
+          <Button variant="ghost" size="icon" className="shrink-0" asChild>
             <Link href="/student/results">
               <ArrowLeft className="w-5 h-5" />
             </Link>
           </Button>
-          <div className="flex items-center gap-2 min-w-0">
-            <BookOpen className="w-5 h-5 text-primary shrink-0" />
+          <div className="flex min-w-0 items-center gap-2">
+            <BookOpen className="h-5 w-5 shrink-0 text-primary" />
             <div className="min-w-0">
-              <h1 className="font-semibold truncate">{result.examTitle || 'Hasil Ujian'}</h1>
-              <p className="text-xs text-muted-foreground">
+              <h1 className="truncate font-semibold">{result.examTitle || 'Hasil Ujian'}</h1>
+              <p className="truncate text-xs text-muted-foreground">
                 {result.examGrade ? `${formatGradeLabel(result.examGrade)} · ` : ''}
                 {result.submittedAt.toLocaleString('id-ID')}
               </p>
             </div>
           </div>
         </div>
-      </header>
+      </div>
 
-      <main className="max-w-4xl mx-auto px-4 py-6 space-y-6">
+      <main className="mx-auto max-w-4xl space-y-6 px-4 py-6">
         {!visible && (
           <Alert>
             <Clock className="h-4 w-4" />
@@ -131,10 +131,10 @@ export default function StudentResultDetailPage() {
                 <div className="flex flex-wrap items-end justify-between gap-4">
                   <div>
                     <CardTitle className={cn('text-4xl tabular-nums', getScoreColor(result.percentage))}>
-                      {result.percentage.toFixed(0)}%
+                      {formatPercent(result.percentage)}
                     </CardTitle>
                     <p className="text-muted-foreground mt-1">
-                      {result.score} / {result.maxScore} poin
+                      {formatNumber(result.score)} / {formatNumber(result.maxScore)} poin
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-2">
@@ -152,12 +152,12 @@ export default function StudentResultDetailPage() {
                     {result.passingScore !== undefined && (
                       <Badge variant="outline" className="gap-1">
                         <Trophy className="w-3.5 h-3.5" />
-                        Ambang: {result.passingScore}%
+                        Ambang: {formatPercent(result.passingScore)}
                       </Badge>
                     )}
                     <Badge variant="secondary" className="gap-1">
                       <Clock className="w-3.5 h-3.5" />
-                      {Math.round(result.timeSpent / 60)} menit
+                      {formatDurationMinutes(result.timeSpent)}
                     </Badge>
                   </div>
                 </div>
@@ -188,6 +188,6 @@ export default function StudentResultDetailPage() {
           </Button>
         </div>
       </main>
-    </div>
+    </>
   );
 }

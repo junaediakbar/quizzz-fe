@@ -2,7 +2,6 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import {
   LayoutDashboard,
@@ -11,23 +10,13 @@ import {
   FileText,
   BarChart3,
   Settings,
-  LogOut,
   Bell,
   Search,
-  User,
   GraduationCap,
 } from 'lucide-react';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
+import { UserAccountMenu } from '@/components/shared/user-account-menu';
 import { useAuth } from '@/contexts/AuthContext';
 
 const navItems = [
@@ -46,18 +35,11 @@ interface TeacherNavProps {
   children?: React.ReactNode;
 }
 
-export function TeacherNav({ userName, userAvatar, children }: TeacherNavProps) {
+export function TeacherNav({ userName, children }: TeacherNavProps) {
   const pathname = usePathname();
-  const { user, logout } = useAuth();
-  const router = useRouter();
-
-  const handleLogout = async () => {
-    await logout();
-    router.push('/login');
-  };
+  const { user } = useAuth();
 
   const displayName = userName || user?.name || 'Teacher';
-  const displayEmail = user?.email || 'teacher@quizzz.com';
 
   const navLinkClass = (href: string) => {
     const isActive = pathname === href || (pathname?.startsWith(`${href}/`) ?? false);
@@ -107,46 +89,14 @@ export function TeacherNav({ userName, userAvatar, children }: TeacherNavProps) 
           })}
         </nav>
 
-        {/* User */}
+        {/* User — sidebar */}
         <div className="p-2 sm:p-4 border-t border-border">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" className="w-full justify-start gap-2 sm:gap-3 px-3 sm:px-4 h-auto py-2.5 hover:bg-muted/80">
-                <Avatar className="w-8 h-8">
-                  <AvatarImage src={userAvatar} />
-                  <AvatarFallback className="bg-primary/10 text-primary font-semibold">
-                    {displayName.charAt(0).toUpperCase()}
-                  </AvatarFallback>
-                </Avatar>
-                <div className="flex-1 text-left hidden sm:block">
-                  <p className="text-sm font-medium truncate">{displayName}</p>
-                  <p className="text-xs text-muted-foreground">Teacher</p>
-                </div>
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-56">
-              <DropdownMenuLabel>
-                <div className="flex flex-col space-y-1">
-                  <p className="text-sm font-medium">{displayName}</p>
-                  <p className="text-xs text-muted-foreground">{displayEmail}</p>
-                </div>
-              </DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => router.push('/teacher/profile')}>
-                <User className="w-4 h-4 mr-2" />
-                Profile
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => router.push('/teacher/settings')}>
-                <Settings className="w-4 h-4 mr-2" />
-                Settings
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={handleLogout} className="text-destructive">
-                <LogOut className="w-4 h-4 mr-2" />
-                Logout
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <UserAccountMenu
+            profileHref="/teacher/profile"
+            settingsHref="/teacher/settings"
+            avatarFallbackClassName="bg-primary/10 text-primary font-semibold"
+            className="w-full justify-start px-3 sm:px-4"
+          />
         </div>
       </aside>
 
@@ -160,40 +110,22 @@ export function TeacherNav({ userName, userAvatar, children }: TeacherNavProps) 
             </div>
             <span className="truncate text-sm font-semibold">Instructor</span>
           </Link>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-10 w-10 shrink-0 touch-manipulation">
-                <Avatar className="h-8 w-8">
-                  <AvatarImage src={userAvatar} />
-                  <AvatarFallback className="bg-primary/10 text-primary font-semibold">
-                    {displayName.charAt(0).toUpperCase()}
-                  </AvatarFallback>
-                </Avatar>
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-56">
-              <DropdownMenuLabel>
-                <div className="flex flex-col space-y-1">
-                  <p className="text-sm font-medium">{displayName}</p>
-                  <p className="text-xs text-muted-foreground">{displayEmail}</p>
-                </div>
-              </DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => router.push('/teacher/profile')}>
-                <User className="mr-2 h-4 w-4" />
-                Profile
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => router.push('/teacher/settings')}>
-                <Settings className="mr-2 h-4 w-4" />
-                Settings
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={handleLogout} className="text-destructive">
-                <LogOut className="mr-2 h-4 w-4" />
-                Logout
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <UserAccountMenu
+            profileHref="/teacher/profile"
+            settingsHref="/teacher/settings"
+            avatarFallbackClassName="bg-primary/10 text-primary font-semibold"
+            variant="icon"
+          />
+        </header>
+
+        {/* Desktop — avatar kanan atas */}
+        <header className="hidden md:flex h-14 shrink-0 items-center justify-end gap-2 border-b border-border bg-card/80 px-4 sm:px-6 backdrop-blur-sm">
+          <UserAccountMenu
+            profileHref="/teacher/profile"
+            settingsHref="/teacher/settings"
+            avatarFallbackClassName="bg-primary/10 text-primary font-semibold"
+            variant="icon"
+          />
         </header>
 
         {children || (

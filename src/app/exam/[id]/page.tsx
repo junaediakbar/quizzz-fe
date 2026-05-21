@@ -29,7 +29,7 @@ import {
   WifiOff,
   Wifi,
 } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { cn, formatCountdown, clampSeconds } from '@/lib/utils';
 import { Question } from '@/lib/types';
 import { examsApi, sessionsApi } from '@/lib/api';
 import { toast } from 'sonner';
@@ -57,6 +57,7 @@ export default function ExamPage() {
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [flaggedQuestions, setFlaggedQuestions] = useState<Set<string>>(new Set());
   const [timeRemaining, setTimeRemaining] = useState(0);
+  const [examDeadlineMs, setExamDeadlineMs] = useState<number | null>(null);
   const [showSubmitDialog, setShowSubmitDialog] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [violationCount, setViolationCount] = useState(0);
@@ -141,10 +142,17 @@ export default function ExamPage() {
         setAnswers((prev) => ({ ...prev, ...s.answers }));
       }
       const startMs = new Date(s.started_at).getTime();
-      const end = startMs + (s.duration || 60) * 60 * 1000;
-      const remain = Math.max(0, Math.floor((end - Date.now()) / 1000));
-      setTimeRemaining(remain || (s.duration || 60) * 60);
+      const durationSec = (s.duration || 60) * 60;
+      const endMs =
+        Number.isFinite(startMs) ? startMs + durationSec * 1000 : Date.now() + durationSec * 1000;
+      const remain = clampSeconds(Math.floor((endMs - Date.now()) / 1000));
+      setExamDeadlineMs(endMs);
+      setTimeRemaining(remain);
       setPhase('active');
+      if (remain <= 0) {
+        toast.warning('Waktu ujian sudah habis. Silakan submit jawaban.');
+        setShowSubmitDialog(true);
+      }
       await sessionsApi.logProctoringEvent(s.session_id, 'exam_started', { fullscreen: true });
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Failed to start exam');
@@ -202,19 +210,18 @@ export default function ExamPage() {
   );
 
   useEffect(() => {
-    if (phase !== 'active' || examQuestions.length === 0) return;
-    const timer = setInterval(() => {
-      setTimeRemaining((prev) => {
-        if (prev <= 1) {
-          clearInterval(timer);
-          handleSubmit();
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
+    if (phase !== 'active' || examDeadlineMs == null) return;
+    const tick = () => {
+      const remain = clampSeconds(Math.floor((examDeadlineMs - Date.now()) / 1000));
+      setTimeRemaining(remain);
+      if (remain <= 0) {
+        handleSubmit();
+      }
+    };
+    tick();
+    const timer = setInterval(tick, 1000);
     return () => clearInterval(timer);
-  }, [handleSubmit, phase, examQuestions.length]);
+  }, [handleSubmit, phase, examDeadlineMs]);
 
   useEffect(() => {
     if (phase !== 'active') return;
@@ -303,12 +310,6 @@ export default function ExamPage() {
       window.removeEventListener('keydown', keyBlock, true);
     };
   }, [phase]);
-
-  const formatTime = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-  };
 
   const persistAnswer = async (questionId: string, value: string) => {
     if (!sessionId) return;
@@ -505,7 +506,7 @@ export default function ExamPage() {
           <div className="flex items-center gap-4 flex-wrap">
             <div className={cn('flex items-center gap-2 font-mono text-lg font-semibold', getTimeColor())}>
               <Clock className="w-5 h-5" />
-              {formatTime(timeRemaining)}
+              {formatCountdown(timeRemaining)}
             </div>
             <div className="hidden sm:block w-40">
               <div className="flex justify-between text-xs mb-1 text-muted-foreground">

@@ -3,7 +3,7 @@
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import type { AnswerReview } from '@/lib/types';
-import { cn } from '@/lib/utils';
+import { cn, formatNumber } from '@/lib/utils';
 import { CheckCircle2, Clock, XCircle } from 'lucide-react';
 
 function formatAnswer(value?: string | string[]) {
@@ -85,7 +85,7 @@ function AnswerReviewCard({
               </Badge>
             )}
             <Badge variant="outline">
-              {answer.points}/{answer.maxPoints} poin
+              {formatNumber(answer.points)}/{formatNumber(answer.maxPoints)} poin
             </Badge>
           </div>
         </div>

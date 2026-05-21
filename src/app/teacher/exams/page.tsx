@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { TeacherNav } from '@/components/shared/teacher-nav';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -26,7 +27,7 @@ import { examsApi } from '@/lib/api';
 import { Exam } from '@/lib/types';
 import { formatGradeLabel } from '@/lib/constants/grades';
 import { useAuth } from '@/contexts/AuthContext';
-import { FileText, Loader2, MoreVertical, Plus, Trash2 } from 'lucide-react';
+import { Edit, FileText, Loader2, MoreVertical, Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 function getStatusBadge(status: string) {
@@ -42,6 +43,7 @@ function getStatusBadge(status: string) {
 }
 
 export default function TeacherExamsPage() {
+  const router = useRouter();
   const { user, isLoading: authLoading } = useAuth();
   const [exams, setExams] = useState<Exam[]>([]);
   const [loading, setLoading] = useState(true);
@@ -104,7 +106,7 @@ export default function TeacherExamsPage() {
       <header className="border-b border-border bg-card px-4 py-4 sm:px-6 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold">Ujian Saya</h1>
-          <p className="text-sm text-muted-foreground">Kelola dan hapus ujian yang telah dibuat</p>
+          <p className="text-sm text-muted-foreground">Kelola, edit, dan hapus ujian yang telah dibuat</p>
         </div>
         <Button asChild>
           <Link href="/teacher/exams/create">
@@ -164,6 +166,12 @@ export default function TeacherExamsPage() {
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
+                        <DropdownMenuItem
+                          onClick={() => router.push(`/teacher/exams/${exam.id}/edit`)}
+                        >
+                          <Edit className="w-4 h-4 mr-2" />
+                          Edit ujian
+                        </DropdownMenuItem>
                         <DropdownMenuItem
                           className="text-destructive focus:text-destructive"
                           onClick={() => openDelete(exam)}

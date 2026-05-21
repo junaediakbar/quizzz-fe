@@ -1,4 +1,4 @@
-import { get } from './client';
+import { del, get } from './client';
 import { ExamResult } from '../types';
 import { mapExamResult } from './mappers';
 
@@ -12,5 +12,9 @@ export const resultsApi = {
   get: async (id: string): Promise<ExamResult> => {
     const raw = await get<Record<string, unknown>>(`/results/${id}`);
     return mapExamResult(raw);
+  },
+
+  delete: async (id: string): Promise<void> => {
+    return del(`/results/${id}`);
   },
 };

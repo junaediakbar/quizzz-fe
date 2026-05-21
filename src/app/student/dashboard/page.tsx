@@ -5,32 +5,20 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import {
   BookOpen,
+  Calendar,
   Clock,
   Trophy,
   TrendingUp,
   Play,
-  Calendar,
   Award,
   Target,
   CheckCircle2,
   XCircle,
-  User,
-  Settings,
-  LogOut,
   Loader2,
 } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { cn, formatDurationMinutes, formatNumber, formatPercent } from '@/lib/utils';
 import { formatGradeLabel } from '@/lib/constants/grades';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
@@ -39,7 +27,7 @@ import { dashboardApi } from '@/lib/api';
 import type { Exam, ExamResult } from '@/lib/types';
 
 export default function StudentDashboardPage() {
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [upcomingExams, setUpcomingExams] = useState<Exam[]>([]);
@@ -56,7 +44,7 @@ export default function StudentDashboardPage() {
         if (!cancelled) {
           setUpcomingExams(d.upcomingExams);
           setRecentResults(d.completedExams);
-          setAverageScore(Math.round(d.averageScore * 10) / 10);
+          setAverageScore(d.averageScore);
           setTotalTaken(d.totalExamsTaken);
         }
       } catch (e) {
@@ -69,11 +57,6 @@ export default function StudentDashboardPage() {
       cancelled = true;
     };
   }, [user?.id]);
-
-  const handleLogout = async () => {
-    await logout();
-    router.push('/login');
-  };
 
   const getScoreColor = (percentage: number) => {
     if (percentage >= 80) return 'text-green-500';
@@ -88,69 +71,7 @@ export default function StudentDashboardPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-background to-muted/20">
-      {/* Header */}
-      <header className="border-b border-border bg-card/80 backdrop-blur-sm sticky top-0 z-10 pt-[env(safe-area-inset-top)]">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 sm:py-4 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-3 sm:gap-4">
-            <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center">
-              <span className="text-primary-foreground font-bold">Q</span>
-            </div>
-            <div>
-              <h1 className="font-semibold text-lg">QuizApp</h1>
-              <p className="text-xs text-muted-foreground">Student Portal</p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 sm:gap-4">
-            <Button variant="outline" size="sm" className="touch-manipulation">
-              <Calendar className="w-4 h-4 sm:mr-2" />
-              <span className="hidden sm:inline">Schedule</span>
-            </Button>
-
-            {/* User Dropdown Menu */}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" className="relative h-10 flex items-center gap-2 px-3">
-                  <Avatar className="h-8 w-8">
-                    <AvatarFallback className="bg-green-500/10 text-green-500">
-                      {user?.name?.charAt(0).toUpperCase() || 'S'}
-                    </AvatarFallback>
-                  </Avatar>
-                  <div className="flex flex-col items-start text-sm hidden sm:flex">
-                    <span className="font-medium">{user?.name || 'Student'}</span>
-                    <span className="text-xs text-muted-foreground">Grade 11</span>
-                  </div>
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56">
-                <DropdownMenuLabel>
-                  <div className="flex flex-col space-y-1">
-                    <p className="text-sm font-medium">{user?.name || 'Student'}</p>
-                    <p className="text-xs text-muted-foreground">{user?.email || 'student@quizzz.com'}</p>
-                  </div>
-                </DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => router.push('/student/profile')}>
-                  <User className="w-4 h-4 mr-2" />
-                  Profile
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => router.push('/student/settings')}>
-                  <Settings className="w-4 h-4 mr-2" />
-                  Settings
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={handleLogout} className="text-red-500">
-                  <LogOut className="w-4 h-4 mr-2" />
-                  Logout
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        </div>
-      </header>
-
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6 sm:space-y-8 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
+    <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6 sm:space-y-8 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
         {loading && (
           <div className="flex justify-center py-12">
             <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
@@ -197,7 +118,7 @@ export default function StudentDashboardPage() {
               </div>
               <div className="mt-4">
                 <p className="text-sm text-muted-foreground">Average Score</p>
-                <p className="text-3xl font-bold mt-1 text-green-500">{averageScore}%</p>
+                <p className="text-3xl font-bold mt-1 text-green-500">{formatPercent(averageScore)}</p>
               </div>
             </CardContent>
           </Card>
@@ -327,7 +248,7 @@ export default function StudentDashboardPage() {
                           {result.examTitle || `Ujian ${result.examId.slice(0, 8)}…`}
                         </span>
                         <span className={cn('font-semibold', getScoreColor(result.percentage))}>
-                          {result.percentage}%
+                          {formatPercent(result.percentage)}
                         </span>
                       </div>
                       <Progress
@@ -416,17 +337,17 @@ export default function StudentDashboardPage() {
                           {formatGradeLabel(result.examGrade)}
                           {result.examGrade ? ' · ' : ''}
                           {result.submittedAt.toLocaleDateString('id-ID')} ·{' '}
-                          {Math.round(result.timeSpent / 60)} menit
+                          {formatDurationMinutes(result.timeSpent)}
                         </p>
                       </div>
                     </div>
 
                     <div className="text-right shrink-0">
                       <p className={cn('text-2xl font-bold tabular-nums', getScoreColor(result.percentage))}>
-                        {result.percentage.toFixed(0)}%
+                        {formatPercent(result.percentage)}
                       </p>
                       <p className="text-sm text-muted-foreground">
-                        {result.score}/{result.maxScore} poin
+                        {formatNumber(result.score)}/{formatNumber(result.maxScore)} poin
                       </p>
                     </div>
                   </Link>
@@ -435,7 +356,6 @@ export default function StudentDashboardPage() {
             </CardContent>
           </Card>
         </div>
-      </main>
-    </div>
+    </main>
   );
 }

@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -17,7 +18,7 @@ import { useRouter } from 'next/navigation';
 export default function StudentSettingsPage() {
   const { user, logout } = useAuth();
   const router = useRouter();
-  const [isSaving, setIsSaving] = React.useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
   const handleSave = () => {
     setIsSaving(true);
@@ -33,23 +34,17 @@ export default function StudentSettingsPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-background to-muted/20">
-      {/* Header */}
-      <header className="border-b border-border bg-card/80 backdrop-blur-sm sticky top-0 z-40">
-        <div className="max-w-4xl mx-auto px-6 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <Button variant="ghost" size="sm" onClick={() => router.push('/student/dashboard')}>
-                ← Back
-              </Button>
-              <h1 className="text-xl font-bold">Settings</h1>
-            </div>
-          </div>
+    <>
+      <div className="border-b border-border bg-card/80">
+        <div className="mx-auto flex max-w-4xl items-center gap-3 px-4 py-3 sm:px-6">
+          <Button variant="ghost" size="sm" onClick={() => router.push('/student/dashboard')}>
+            ← Kembali
+          </Button>
+          <h1 className="truncate text-xl font-bold">Pengaturan</h1>
         </div>
-      </header>
+      </div>
 
-      {/* Main Content */}
-      <main className="max-w-4xl mx-auto px-6 py-8 space-y-6">
+      <main className="mx-auto max-w-4xl space-y-6 px-4 py-8 sm:px-6">
         {/* Account Settings */}
         <Card>
           <CardHeader>
@@ -164,9 +159,6 @@ export default function StudentSettingsPage() {
           </Button>
         </div>
       </main>
-    </div>
+    </>
   );
 }
-
-// Add React import for useState
-import React from 'react';

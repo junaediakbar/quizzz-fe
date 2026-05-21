@@ -16,16 +16,24 @@ function DropdownMenuPortal({ ...props }: MenuPrimitive.Portal.Props) {
 
 function DropdownMenuTrigger({
   asChild = false,
+  children,
   ...props
 }: MenuPrimitive.Trigger.Props & { asChild?: boolean }) {
-  if (asChild && React.isValidElement(props.children)) {
-    const child = props.children as React.ReactElement<{ onClick?: MenuPrimitive.Trigger.Props['onClick']; [key: string]: unknown }>
-    return React.cloneElement(child, {
-      onClick: props.onClick,
-      ...(child.props || {}),
-    })
+  if (asChild && React.isValidElement(children)) {
+    return (
+      <MenuPrimitive.Trigger
+        data-slot="dropdown-menu-trigger"
+        nativeButton
+        {...props}
+        render={children}
+      />
+    )
   }
-  return <MenuPrimitive.Trigger data-slot="dropdown-menu-trigger" {...props} />
+  return (
+    <MenuPrimitive.Trigger data-slot="dropdown-menu-trigger" {...props}>
+      {children}
+    </MenuPrimitive.Trigger>
+  )
 }
 
 function DropdownMenuContent({
@@ -67,13 +75,14 @@ function DropdownMenuLabel({
   className,
   inset,
   ...props
-}: MenuPrimitive.GroupLabel.Props & {
+}: React.ComponentProps<"div"> & {
   inset?: boolean
 }) {
   return (
-    <MenuPrimitive.GroupLabel
+    <div
       data-slot="dropdown-menu-label"
       data-inset={inset}
+      role="presentation"
       className={cn(
         "px-1.5 py-1 text-xs font-medium text-muted-foreground data-inset:pl-7",
         className

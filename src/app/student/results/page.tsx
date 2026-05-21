@@ -8,7 +8,7 @@ import { resultsApi } from '@/lib/api';
 import type { ExamResult } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { cn } from '@/lib/utils';
+import { cn, formatDurationMinutes, formatPercent } from '@/lib/utils';
 import { formatGradeLabel } from '@/lib/constants/grades';
 import {
   ArrowLeft,
@@ -66,22 +66,22 @@ export default function StudentResultsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-muted/20">
-      <header className="border-b bg-background">
-        <div className="max-w-3xl mx-auto px-4 py-4 flex items-center gap-3">
-          <Button variant="ghost" size="icon" asChild>
+    <>
+      <div className="border-b bg-background/80">
+        <div className="mx-auto flex max-w-3xl items-center gap-3 px-4 py-3">
+          <Button variant="ghost" size="icon" className="shrink-0" asChild>
             <Link href="/student/dashboard">
               <ArrowLeft className="w-5 h-5" />
             </Link>
           </Button>
-          <div className="flex items-center gap-2">
-            <BookOpen className="w-5 h-5 text-primary" />
-            <h1 className="text-lg font-semibold">Semua Hasil Ujian</h1>
+          <div className="flex min-w-0 items-center gap-2">
+            <BookOpen className="h-5 w-5 shrink-0 text-primary" />
+            <h1 className="truncate text-lg font-semibold">Semua Hasil Ujian</h1>
           </div>
         </div>
-      </header>
+      </div>
 
-      <main className="max-w-3xl mx-auto px-4 py-6">
+      <main className="mx-auto max-w-3xl px-4 py-6">
         {results.length === 0 ? (
           <Card>
             <CardContent className="py-12 text-center text-muted-foreground">
@@ -117,13 +117,13 @@ export default function StudentResultsPage() {
                       <p className="text-sm text-muted-foreground">
                         {result.examGrade ? `${formatGradeLabel(result.examGrade)} · ` : ''}
                         {result.submittedAt.toLocaleDateString('id-ID')} ·{' '}
-                        {Math.round(result.timeSpent / 60)} menit
+                        {formatDurationMinutes(result.timeSpent)}
                       </p>
                     </div>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
                     <span className={cn('text-lg font-bold tabular-nums', getScoreColor(result.percentage))}>
-                      {result.percentage.toFixed(0)}%
+                      {formatPercent(result.percentage)}
                     </span>
                     <ChevronRight className="w-5 h-5 text-muted-foreground" />
                   </div>
@@ -133,6 +133,6 @@ export default function StudentResultsPage() {
           </Card>
         )}
       </main>
-    </div>
+    </>
   );
 }

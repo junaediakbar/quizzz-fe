@@ -20,6 +20,7 @@ export interface UpdateExamRequest {
   grade?: string;
   config?: ExamConfig;
   status?: string;
+  question_ids?: string[];
   scheduled_start?: string;
   scheduled_end?: string;
 }
@@ -89,6 +90,7 @@ export const examsApi = {
     if (data.grade !== undefined) body.grade = data.grade;
     if (data.config !== undefined) body.config = configToApi(data.config);
     if (data.status !== undefined) body.status = data.status;
+    if (data.question_ids !== undefined) body.question_ids = data.question_ids;
     if (data.scheduled_start !== undefined) body.scheduled_start = data.scheduled_start;
     if (data.scheduled_end !== undefined) body.scheduled_end = data.scheduled_end;
     const raw = await put<Record<string, unknown>>(`/exams/${id}`, body);
