@@ -36,12 +36,18 @@ import {
   Check,
   ChevronRight,
   ChevronLeft,
+  ChevronUp,
+  ChevronDown,
+  ArrowUpDown,
   Loader2,
+  Shield,
 } from 'lucide-react';
+import { Switch } from '@/components/ui/switch';
 import { QuestionStemWithImages } from '@/components/shared/question-image-display';
 import { cn } from '@/lib/utils';
 import { GRADE_OPTIONS, formatGradeLabel } from '@/lib/constants/grades';
-import { Question } from '@/lib/types';
+import { Question, type ExamConfig } from '@/lib/types';
+import { formatMaxViolationsLabel } from '@/lib/exam-security';
 import { TeacherNav } from '@/components/shared/teacher-nav';
 import { useAuth } from '@/contexts/AuthContext';
 import { questionsApi } from '@/lib/api/questions';
@@ -72,15 +78,7 @@ export function ExamWizard({ examId }: ExamWizardProps) {
   const [isQuestionDialogOpen, setIsQuestionDialogOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
-  const [examConfig, setExamConfig] = useState<{
-    duration: number;
-    shuffleQuestions: boolean;
-    shuffleOptions: boolean;
-    showResults: 'immediate' | 'after-review' | 'manual';
-    allowReview: boolean;
-    maxAttempts: number;
-    passingScore: number;
-  }>({
+  const [examConfig, setExamConfig] = useState<ExamConfig>({
     duration: 60,
     shuffleQuestions: false,
     shuffleOptions: true,
@@ -88,6 +86,11 @@ export function ExamWizard({ examId }: ExamWizardProps) {
     allowReview: true,
     maxAttempts: 1,
     passingScore: 70,
+    securityEnabled: true,
+    maxViolations: 3,
+    requireFullscreen: true,
+    blockCopyPaste: true,
+    detectFocusLoss: true,
   });
 
   const steps: { id: WizardStep; label: string; description: string }[] = [
@@ -171,7 +174,23 @@ export function ExamWizard({ examId }: ExamWizardProps) {
   };
 
   const removeQuestion = (id: string) => {
-    setSelectedQuestions(prev => prev.filter(q => q.id !== id));
+    setSelectedQuestions((prev) => prev.filter((q) => q.id !== id));
+  };
+
+  const moveQuestion = (id: string, dir: -1 | 1) => {
+    setSelectedQuestions((prev) => {
+      const i = prev.findIndex((q) => q.id === id);
+      if (i < 0) return prev;
+      const j = i + dir;
+      if (j < 0 || j >= prev.length) return prev;
+      const next = [...prev];
+      [next[i], next[j]] = [next[j], next[i]];
+      return next;
+    });
+  };
+
+  const reverseQuestionOrder = () => {
+    setSelectedQuestions((prev) => [...prev].reverse());
   };
 
   const nextStep = () => {
@@ -390,13 +409,28 @@ export function ExamWizard({ examId }: ExamWizardProps) {
                     <div>
                       <CardTitle>Add Questions</CardTitle>
                       <CardDescription>
-                        {selectedQuestions.length} questions selected • {totalPoints} total points
+                        {selectedQuestions.length} soal dipilih • {totalPoints} poin • urutan Q1→Q
+                        {selectedQuestions.length} sesuai daftar (bisa diubah)
                       </CardDescription>
                     </div>
-                    <Button onClick={() => setIsQuestionDialogOpen(true)} className="gap-2">
-                      <Plus className="w-4 h-4" />
-                      Add Questions
-                    </Button>
+                    <div className="flex flex-wrap gap-2">
+                      {selectedQuestions.length > 1 && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={reverseQuestionOrder}
+                          className="gap-2"
+                        >
+                          <ArrowUpDown className="w-4 h-4" />
+                          Balik urutan
+                        </Button>
+                      )}
+                      <Button onClick={() => setIsQuestionDialogOpen(true)} className="gap-2">
+                        <Plus className="w-4 h-4" />
+                        Add Questions
+                      </Button>
+                    </div>
                   </div>
                 </CardHeader>
                 <CardContent>
@@ -436,14 +470,35 @@ export function ExamWizard({ examId }: ExamWizardProps) {
                             <p className="text-sm text-muted-foreground truncate">{question.content}</p>
                           </div>
                           <div className="flex items-center gap-1">
-                            <Button variant="ghost" size="icon" className="h-8 w-8">
-                              <Eye className="h-4 w-4" />
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
+                              title="Naik"
+                              disabled={index === 0}
+                              onClick={() => moveQuestion(question.id, -1)}
+                            >
+                              <ChevronUp className="h-4 w-4" />
                             </Button>
                             <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
+                              title="Turun"
+                              disabled={index === selectedQuestions.length - 1}
+                              onClick={() => moveQuestion(question.id, 1)}
+                            >
+                              <ChevronDown className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              type="button"
                               variant="ghost"
                               size="icon"
                               className="h-8 w-8"
                               onClick={() => removeQuestion(question.id)}
+                              title="Hapus dari ujian"
                             >
                               <Trash2 className="h-4 w-4 text-destructive" />
                             </Button>
@@ -561,6 +616,116 @@ export function ExamWizard({ examId }: ExamWizardProps) {
                       </div>
                     </div>
                   </div>
+
+                  <Separator />
+
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-2">
+                      <Shield className="h-5 w-5 text-primary" />
+                      <h3 className="font-medium">Keamanan & Proctoring</h3>
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      Atur mode ketat saat siswa mengerjakan ujian, atau nonaktifkan untuk ujian latihan.
+                    </p>
+
+                    <div className="flex items-center justify-between rounded-lg border p-4">
+                      <div>
+                        <p className="font-medium">Aktifkan keamanan</p>
+                        <p className="text-sm text-muted-foreground">
+                          Nonaktifkan untuk ujian tanpa fullscreen, tanpa deteksi tab, dll.
+                        </p>
+                      </div>
+                      <Switch
+                        checked={examConfig.securityEnabled}
+                        onCheckedChange={(v) =>
+                          setExamConfig({
+                            ...examConfig,
+                            securityEnabled: v,
+                            ...(v && examConfig.maxViolations === 0
+                              ? { maxViolations: 3 }
+                              : {}),
+                          })
+                        }
+                      />
+                    </div>
+
+                    {examConfig.securityEnabled && (
+                      <div className="space-y-3 rounded-lg border border-dashed p-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="maxViolations">Toleransi pelanggaran</Label>
+                          <Select
+                            value={String(examConfig.maxViolations)}
+                            onValueChange={(v) =>
+                              setExamConfig({
+                                ...examConfig,
+                                maxViolations: parseInt(v ?? '3', 10),
+                              })
+                            }
+                          >
+                            <SelectTrigger id="maxViolations">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="0">Tidak mengunci otomatis (hanya peringatan)</SelectItem>
+                              <SelectItem value="1">1 pelanggaran → sesi berakhir</SelectItem>
+                              <SelectItem value="2">2 pelanggaran → sesi berakhir</SelectItem>
+                              <SelectItem value="3">3 pelanggaran → sesi berakhir</SelectItem>
+                              <SelectItem value="5">5 pelanggaran → sesi berakhir</SelectItem>
+                              <SelectItem value="10">10 pelanggaran → sesi berakhir</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <p className="text-xs text-muted-foreground">
+                            Pindah tab, keluar fullscreen, dll. dihitung sebagai pelanggaran.
+                          </p>
+                        </div>
+
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="font-medium">Wajib fullscreen</p>
+                            <p className="text-sm text-muted-foreground">
+                              Siswa harus fullscreen sebelum mulai
+                            </p>
+                          </div>
+                          <Switch
+                            checked={examConfig.requireFullscreen}
+                            onCheckedChange={(v) =>
+                              setExamConfig({ ...examConfig, requireFullscreen: v })
+                            }
+                          />
+                        </div>
+
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="font-medium">Deteksi pindah tab / jendela</p>
+                            <p className="text-sm text-muted-foreground">
+                              Mencatat saat siswa meninggalkan halaman ujian
+                            </p>
+                          </div>
+                          <Switch
+                            checked={examConfig.detectFocusLoss}
+                            onCheckedChange={(v) =>
+                              setExamConfig({ ...examConfig, detectFocusLoss: v })
+                            }
+                          />
+                        </div>
+
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="font-medium">Blokir salin / tempel</p>
+                            <p className="text-sm text-muted-foreground">
+                              Menonaktifkan copy, paste, dan klik kanan
+                            </p>
+                          </div>
+                          <Switch
+                            checked={examConfig.blockCopyPaste}
+                            onCheckedChange={(v) =>
+                              setExamConfig({ ...examConfig, blockCopyPaste: v })
+                            }
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </CardContent>
               </Card>
             )}
@@ -611,6 +776,14 @@ export function ExamWizard({ examId }: ExamWizardProps) {
                         <div className="flex justify-between">
                           <dt className="text-muted-foreground">Passing Score:</dt>
                           <dd className="font-medium">{examConfig.passingScore}%</dd>
+                        </div>
+                        <div className="flex justify-between">
+                          <dt className="text-muted-foreground">Keamanan:</dt>
+                          <dd className="font-medium text-right">
+                            {examConfig.securityEnabled
+                              ? formatMaxViolationsLabel(examConfig.maxViolations)
+                              : 'Nonaktif'}
+                          </dd>
                         </div>
                       </dl>
                     </div>

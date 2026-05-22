@@ -59,6 +59,13 @@ export interface ExamConfig {
   allowReview: boolean;
   maxAttempts: number;
   passingScore: number;
+  /** Master switch: when false, all proctoring is off */
+  securityEnabled: boolean;
+  /** 0 = only warn, never auto-end session */
+  maxViolations: number;
+  requireFullscreen: boolean;
+  blockCopyPaste: boolean;
+  detectFocusLoss: boolean;
 }
 
 export interface Exam {

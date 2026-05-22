@@ -9,6 +9,14 @@ import {
   QuestionBank,
 } from './types';
 
+const mockSecurityDefaults = {
+  securityEnabled: true,
+  maxViolations: 3,
+  requireFullscreen: true,
+  blockCopyPaste: true,
+  detectFocusLoss: true,
+} as const;
+
 // Mock Users
 export const mockTeacherUser: User = {
   id: 'teacher-1',
@@ -122,6 +130,7 @@ export const mockExams: Exam[] = [
       allowReview: true,
       maxAttempts: 1,
       passingScore: 70,
+      ...mockSecurityDefaults,
     },
     status: 'published',
     createdBy: 'teacher-1',
@@ -145,6 +154,7 @@ export const mockExams: Exam[] = [
       allowReview: true,
       maxAttempts: 2,
       passingScore: 60,
+      ...mockSecurityDefaults,
     },
     status: 'active',
     createdBy: 'teacher-1',
@@ -168,6 +178,11 @@ export const mockExams: Exam[] = [
       allowReview: false,
       maxAttempts: 1,
       passingScore: 75,
+      securityEnabled: false,
+      maxViolations: 0,
+      requireFullscreen: false,
+      blockCopyPaste: false,
+      detectFocusLoss: false,
     },
     status: 'draft',
     createdBy: 'teacher-1',

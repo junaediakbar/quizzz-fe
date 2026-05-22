@@ -47,8 +47,18 @@ function mapExamConfig(raw: Record<string, unknown> | undefined): ExamConfig {
       allowReview: true,
       maxAttempts: 1,
       passingScore: 60,
+      securityEnabled: true,
+      maxViolations: 3,
+      requireFullscreen: true,
+      blockCopyPaste: true,
+      detectFocusLoss: true,
     };
   }
+  const hasSecurityEnabled = raw.security_enabled !== undefined || raw.securityEnabled !== undefined;
+  const securityEnabled = hasSecurityEnabled
+    ? Boolean(raw.security_enabled ?? raw.securityEnabled)
+    : true;
+  const hasMaxViolations = raw.max_violations !== undefined || raw.maxViolations !== undefined;
   return {
     duration: Number(raw.duration ?? 60),
     shuffleQuestions: Boolean(raw.shuffle_questions ?? raw.shuffleQuestions),
@@ -57,6 +67,21 @@ function mapExamConfig(raw: Record<string, unknown> | undefined): ExamConfig {
     allowReview: Boolean(raw.allow_review ?? raw.allowReview),
     maxAttempts: Number(raw.max_attempts ?? raw.maxAttempts ?? 1),
     passingScore: Number(raw.passing_score ?? raw.passingScore ?? 60),
+    securityEnabled,
+    maxViolations: hasMaxViolations
+      ? Number(raw.max_violations ?? raw.maxViolations)
+      : securityEnabled
+        ? 3
+        : 0,
+    requireFullscreen: raw.require_fullscreen !== undefined || raw.requireFullscreen !== undefined
+      ? Boolean(raw.require_fullscreen ?? raw.requireFullscreen)
+      : true,
+    blockCopyPaste: raw.block_copy_paste !== undefined || raw.blockCopyPaste !== undefined
+      ? Boolean(raw.block_copy_paste ?? raw.blockCopyPaste)
+      : true,
+    detectFocusLoss: raw.detect_focus_loss !== undefined || raw.detectFocusLoss !== undefined
+      ? Boolean(raw.detect_focus_loss ?? raw.detectFocusLoss)
+      : true,
   };
 }
 

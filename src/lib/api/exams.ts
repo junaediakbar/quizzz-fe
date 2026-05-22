@@ -40,6 +40,11 @@ function configToApi(c: ExamConfig) {
     allow_review: c.allowReview,
     max_attempts: c.maxAttempts,
     passing_score: c.passingScore,
+    security_enabled: c.securityEnabled,
+    max_violations: c.maxViolations,
+    require_fullscreen: c.requireFullscreen,
+    block_copy_paste: c.blockCopyPaste,
+    detect_focus_loss: c.detectFocusLoss,
   };
 }
 

@@ -34,6 +34,11 @@ import { stripMediaMarkersFromText } from '@/lib/question-images';
 import { cn, formatCountdown, clampSeconds } from '@/lib/utils';
 import { Question } from '@/lib/types';
 import { examsApi, sessionsApi } from '@/lib/api';
+import {
+  DEFAULT_EXAM_SECURITY,
+  securityFromExamConfig,
+  type ExamSecuritySettings,
+} from '@/lib/exam-security';
 import { toast } from 'sonner';
 
 type Phase = 'meta' | 'preflight' | 'active' | 'locked' | 'error';
@@ -67,6 +72,7 @@ export default function ExamPage() {
   const [submitting, setSubmitting] = useState(false);
   const [pageHidden, setPageHidden] = useState(false);
   const [online, setOnline] = useState(true);
+  const [security, setSecurity] = useState<ExamSecuritySettings>(DEFAULT_EXAM_SECURITY);
 
   // Load exam metadata only (PRD: agree rules → fullscreen → start session)
   useEffect(() => {
@@ -81,6 +87,7 @@ export default function ExamPage() {
         setExamTitle(ex.title);
         setDurationMin(ex.config.duration || 60);
         setQuestionCount(ex.questionCount ?? ex.questions?.length ?? 0);
+        setSecurity(securityFromExamConfig(ex.config));
         setPhase('preflight');
       } catch (e) {
         if (!cancelled) {
@@ -110,12 +117,14 @@ export default function ExamPage() {
 
   const beginExam = async () => {
     if (!examId) return;
-    try {
-      await document.documentElement.requestFullscreen();
-      setIsFullscreen(true);
-    } catch {
-      toast.error('Fullscreen is required to start this exam. Please allow fullscreen.');
-      return;
+    if (security.requireFullscreen) {
+      try {
+        await document.documentElement.requestFullscreen();
+        setIsFullscreen(true);
+      } catch {
+        toast.error('Fullscreen wajib untuk memulai ujian ini. Izinkan mode layar penuh.');
+        return;
+      }
     }
 
     setLoading(true);
@@ -140,6 +149,7 @@ export default function ExamPage() {
       setExamTitle(s.exam_title || examTitle);
       setExamQuestions(s.questions);
       setDurationMin(s.duration || durationMin);
+      if (s.security) setSecurity(s.security);
       if (s.answers && typeof s.answers === 'object') {
         setAnswers((prev) => ({ ...prev, ...s.answers }));
       }
@@ -195,20 +205,23 @@ export default function ExamPage() {
 
   const recordViolation = useCallback(
     async (reason: string) => {
+      if (!security.enabled) return;
+      const limit = security.maxViolations;
       setViolationCount((c) => {
         const n = c + 1;
         void logEvent('focus_loss', { reason, count: n });
-        if (n >= 3) {
+        if (limit > 0 && n >= limit) {
           void finalizeLock(n);
         } else {
           setShowWarning(true);
           setTimeout(() => setShowWarning(false), 10000);
-          toast.warning(`Integrity warning ${n}/3: ${reason}`);
+          const limitLabel = limit > 0 ? `${n}/${limit}` : `${n}`;
+          toast.warning(`Peringatan integritas ${limitLabel}: ${reason}`);
         }
         return n;
       });
     },
-    [logEvent, finalizeLock]
+    [logEvent, finalizeLock, security.enabled, security.maxViolations]
   );
 
   useEffect(() => {
@@ -226,24 +239,28 @@ export default function ExamPage() {
   }, [handleSubmit, phase, examDeadlineMs]);
 
   useEffect(() => {
-    if (phase !== 'active') return;
+    if (phase !== 'active' || !security.enabled) return;
     const onVis = () => {
       const hidden = document.hidden;
-      setPageHidden(hidden);
-      if (hidden) void recordViolation('tab_or_window_hidden');
+      setPageHidden(security.detectFocusLoss && hidden);
+      if (hidden && security.detectFocusLoss) void recordViolation('tab_or_window_hidden');
     };
-    document.addEventListener('visibilitychange', onVis);
     const onFs = () => {
       const fs = !!document.fullscreenElement;
       setIsFullscreen(fs);
-      if (!fs && phase === 'active') void recordViolation('fullscreen_exit');
+      if (!fs && security.requireFullscreen) void recordViolation('fullscreen_exit');
     };
-    document.addEventListener('fullscreenchange', onFs);
+    if (security.detectFocusLoss) {
+      document.addEventListener('visibilitychange', onVis);
+    }
+    if (security.requireFullscreen) {
+      document.addEventListener('fullscreenchange', onFs);
+    }
     return () => {
-      document.removeEventListener('visibilitychange', onVis);
-      document.removeEventListener('fullscreenchange', onFs);
+      if (security.detectFocusLoss) document.removeEventListener('visibilitychange', onVis);
+      if (security.requireFullscreen) document.removeEventListener('fullscreenchange', onFs);
     };
-  }, [phase, recordViolation]);
+  }, [phase, recordViolation, security]);
 
   useEffect(() => {
     if (phase !== 'active' || !sessionId) return;
@@ -292,7 +309,7 @@ export default function ExamPage() {
   }, [phase, sessionId, answers, examId]);
 
   useEffect(() => {
-    if (phase !== 'active') return;
+    if (phase !== 'active' || !security.enabled || !security.blockCopyPaste) return;
     const block = (e: Event) => e.preventDefault();
     const keyBlock = (e: KeyboardEvent) => {
       if (e.key === 'F12') e.preventDefault();
@@ -311,7 +328,7 @@ export default function ExamPage() {
       window.removeEventListener('contextmenu', block, true);
       window.removeEventListener('keydown', keyBlock, true);
     };
-  }, [phase]);
+  }, [phase, security.enabled, security.blockCopyPaste]);
 
   const persistAnswer = async (questionId: string, value: string) => {
     if (!sessionId) return;
@@ -412,6 +429,38 @@ export default function ExamPage() {
   }
 
   if (phase === 'preflight') {
+    const preflightRules: string[] = [];
+    if (security.requireFullscreen) {
+      preflightRules.push('Timer dimulai setelah Anda masuk mode layar penuh (fullscreen).');
+    } else {
+      preflightRules.push('Timer dimulai setelah Anda menekan tombol mulai.');
+    }
+    if (security.enabled) {
+      const limitText =
+        security.maxViolations > 0
+          ? `${security.maxViolations} pelanggaran → sesi berakhir`
+          : 'hanya peringatan, tanpa penguncian otomatis';
+      if (security.detectFocusLoss && security.requireFullscreen) {
+        preflightRules.push(
+          `Pindah tab, minimize, atau keluar fullscreen dihitung pelanggaran (${limitText}).`
+        );
+      } else if (security.detectFocusLoss) {
+        preflightRules.push(`Pindah tab atau jendela dicatat (${limitText}).`);
+      } else if (security.requireFullscreen) {
+        preflightRules.push(`Keluar fullscreen dihitung pelanggaran (${limitText}).`);
+      }
+      if (security.blockCopyPaste) {
+        preflightRules.push('Salin, tempel, dan klik kanan dinonaktifkan selama ujian.');
+      }
+    } else {
+      preflightRules.push(
+        'Mode keamanan nonaktif — tidak ada deteksi tab atau wajib fullscreen.'
+      );
+    }
+    preflightRules.push(
+      'Jawaban disimpan otomatis setiap 10 detik dan disinkronkan saat online.'
+    );
+
     return (
       <div className="min-h-screen bg-background text-foreground flex items-center justify-center p-6">
         <Card className="max-w-lg w-full border-border shadow-sm">
@@ -422,21 +471,22 @@ export default function ExamPage() {
               </div>
               <div>
                 <h1 className="text-xl font-semibold font-heading tracking-tight">{examTitle}</h1>
-                <p className="text-sm text-muted-foreground">Secure examination mode</p>
+                <p className="text-sm text-muted-foreground">
+                  {security.enabled ? 'Mode ujian terproteksi' : 'Mode ujian standar'}
+                </p>
               </div>
             </div>
             <ul className="text-sm space-y-2 text-muted-foreground list-disc pl-5">
-              <li>Timer starts only after you enter fullscreen.</li>
-              <li>Switching tabs, minimizing, or leaving fullscreen counts as a violation (3 = session ends).</li>
-              <li>Copy, paste, and right-click are disabled during the exam.</li>
-              <li>Answers are saved locally every 10s and synced when online (PRD §3.5).</li>
+              {preflightRules.map((rule) => (
+                <li key={rule}>{rule}</li>
+              ))}
             </ul>
             <div className="flex flex-wrap gap-4 text-sm border-t border-border pt-4">
               <span>
-                <strong className="text-foreground">Duration:</strong> {durationMin} min
+                <strong className="text-foreground">Durasi:</strong> {durationMin} menit
               </span>
               <span>
-                <strong className="text-foreground">Questions:</strong> {questionCount || '—'}
+                <strong className="text-foreground">Soal:</strong> {questionCount || '—'}
               </span>
             </div>
             <Button
@@ -444,7 +494,13 @@ export default function ExamPage() {
               onClick={beginExam}
               disabled={loading}
             >
-              {loading ? <Loader2 className="animate-spin w-5 h-5" /> : 'Enter fullscreen & begin exam'}
+              {loading ? (
+                <Loader2 className="animate-spin w-5 h-5" />
+              ) : security.requireFullscreen ? (
+                'Fullscreen & mulai ujian'
+              ) : (
+                'Mulai ujian'
+              )}
             </Button>
           </CardContent>
         </Card>
@@ -487,13 +543,17 @@ export default function ExamPage() {
         </div>
       )}
 
-      {showWarning && (
+      {showWarning && security.enabled && (
         <div className="fixed top-0 left-0 right-0 z-50 p-4">
           <Alert className="max-w-md mx-auto border-amber-500 bg-amber-50">
             <AlertTriangle className="h-4 w-4 text-amber-600" />
-            <AlertTitle>Integrity warning</AlertTitle>
+            <AlertTitle>Peringatan integritas</AlertTitle>
             <AlertDescription className="text-amber-900">
-              Focus loss recorded ({violationCount}/3). Further violations may end this exam.
+              Pelanggaran tercatat ({violationCount}
+              {security.maxViolations > 0 ? `/${security.maxViolations}` : ''}).
+              {security.maxViolations > 0
+                ? ' Pelanggaran berikutnya dapat mengakhiri ujian.'
+                : ' Ujian tidak akan diakhiri otomatis.'}
             </AlertDescription>
           </Alert>
         </div>
@@ -503,7 +563,9 @@ export default function ExamPage() {
         <div className="max-w-5xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-4">
           <div>
             <h1 className="font-heading font-semibold text-lg">{examTitle}</h1>
-            <p className="text-xs text-muted-foreground">ExamPro AI · Protected session</p>
+            <p className="text-xs text-muted-foreground">
+              ExamPro AI · {security.enabled ? 'Sesi terproteksi' : 'Sesi standar'}
+            </p>
           </div>
           <div className="flex items-center gap-4 flex-wrap">
             <div className={cn('flex items-center gap-2 font-mono text-lg font-semibold', getTimeColor())}>
@@ -566,7 +628,7 @@ export default function ExamPage() {
           <div
             className={cn(
               'transition-[filter] duration-300',
-              pageHidden && 'blur-md pointer-events-none select-none'
+              pageHidden && security.detectFocusLoss && 'blur-md pointer-events-none select-none'
             )}
           >
             <Card className="border-border border-t-[3px] border-t-primary shadow-sm">
@@ -615,20 +677,24 @@ export default function ExamPage() {
                           type="button"
                           onClick={() => handleAnswer(option)}
                           className={cn(
-                            'w-full text-left p-4 rounded-lg border text-[15px] md:text-[16px] transition-colors',
+                            'w-full text-left p-4 rounded-lg border text-[15px] md:text-[16px] transition-colors flex items-start gap-3',
                             currentAnswer === option
                               ? 'border-primary bg-primary/5'
                               : 'border-border hover:border-primary/30'
                           )}
                         >
-                          <span className="font-medium text-primary mr-2">
+                          <span className="font-medium text-primary shrink-0 pt-0.5">
                             {String.fromCharCode(65 + index)}.
                           </span>
-                          <span className="block">{stripMediaMarkersFromText(option)}</span>
-                          <OptionImageDisplay
-                            images={currentQuestion.images}
-                            optionIndex={index}
-                          />
+                          <div className="flex-1 min-w-0 space-y-2">
+                            <span className="leading-relaxed">
+                              {stripMediaMarkersFromText(option)}
+                            </span>
+                            <OptionImageDisplay
+                              images={currentQuestion.images}
+                              optionIndex={index}
+                            />
+                          </div>
                         </button>
                       ))}
                     </div>
@@ -683,9 +749,9 @@ export default function ExamPage() {
               </CardContent>
             </Card>
           </div>
-          {pageHidden && (
+          {pageHidden && security.detectFocusLoss && (
             <p className="text-center text-sm text-amber-700 mt-4 font-medium">
-              Content hidden — return to this tab to continue.
+              Konten disembunyikan — kembali ke tab ini untuk melanjutkan.
             </p>
           )}
         </main>

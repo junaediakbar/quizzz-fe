@@ -1,6 +1,7 @@
 import { get, post, put } from './client';
 import { Question, ExamResult } from '../types';
 import { mapExamResult, mapQuestion } from './mappers';
+import { mapSecurityFromApi, type ExamSecuritySettings } from '@/lib/exam-security';
 
 export interface StartSessionRequest {
   exam_id: string;
@@ -18,6 +19,7 @@ export interface StartSessionResponse {
   started_at: string;
   answers?: Record<string, string>;
   score?: number | null;
+  security?: ExamSecuritySettings;
 }
 
 export interface SubmitAnswerRequest {
@@ -38,6 +40,7 @@ export const sessionsApi = {
       started_at?: string;
       answers?: Record<string, string>;
       score?: number | null;
+      security?: Record<string, unknown>;
     }>('/sessions', data);
     if (raw.already_completed) {
       return {
@@ -60,6 +63,7 @@ export const sessionsApi = {
       duration: raw.duration ?? 60,
       started_at: raw.started_at ?? new Date().toISOString(),
       answers: raw.answers,
+      security: mapSecurityFromApi(raw.security),
     };
   },
 
