@@ -41,6 +41,12 @@ import {
   attachImagesFromParserTemplate,
   attachUploadedPageImagesByQuestionMap,
 } from '@/lib/parser-image-attachments';
+import { QuestionStemWithImages, OptionImageDisplay } from '@/components/shared/question-image-display';
+import {
+  imagesToApiPayload,
+  stripMediaMarkersFromText,
+  stripStandaloneMediaLines,
+} from '@/lib/question-images';
 import { buildParserInputFromPdf } from '@/lib/pdf-parser-input';
 import { TeacherNav } from '@/components/shared/teacher-nav';
 import { toast } from 'sonner';
@@ -89,8 +95,8 @@ function parsedToCreate(q: ParsedQuestion): CreateQuestionRequest {
       correct_answer = q.options[idx];
     }
   }
-  const imgs = [...(q.imageUrls ?? [])].map((s) => s.trim()).filter(Boolean);
-  const image_urls = imgs.length > 0 ? [...new Set(imgs)] : undefined;
+  const images = q.images ?? [];
+  const image_urls = images.length > 0 ? imagesToApiPayload(images) : undefined;
   return {
     type: q.type as QuestionType,
     title: q.title,
@@ -150,15 +156,43 @@ c) x = 7
 d) x = 3
 Correct answer: a`;
 
-  /** Contoh: teks + penanda gambar; unggah 1 foto (diagram di soal no.1) lalu Parse. */
-  const sampleTextWithImagePlaceholder = `1. 5² dibaca ....
+  const sampleImageUrl =
+    'https://cdn1.katadata.co.id/media/images/thumb/2022/09/28/Ilustrasi_Sudut_Tumpul-2022_09_28-17_46_32_16532211a91aca6e17f261d048897db0_960x640_thumb.png';
+
+  /**
+   * Contoh lengkap aturan posisi gambar (parse → preview sesuai urutan di teks):
+   * - [!above …] / baris [!url] sebelum "1." → atas teks soal 1
+   * - [!below …] / [!url] setelah teks, sebelum a) → bawah teks soal 1
+   * - [!url] sebelum "2." → atas teks soal 2
+   * - [!url] di baris opsi → gambar pada pilihan tersebut
+   */
+  const sampleTextWithImageUrl = `[!above ${sampleImageUrl}]
+1. 5² dibaca ....
+[!below ${sampleImageUrl}]
 a) Lima akar dua
 b) Dua pangkat lima
 c) Lima kuadrat
 d) Dua kuadrat
 Correct answer: c
- 
-[!Link Image]
+
+[!${sampleImageUrl}]
+2. 25² sama dengan ....
+a) 25 + 25
+[!option-b ${sampleImageUrl}]
+b) 25 x 25
+c) 25 : 25
+d) 25 – 25
+Correct answer: b`;
+
+  /** Contoh: `[!Link Image]` sebelum `1.` → upload untuk soal 1. */
+  const sampleTextWithImagePlaceholder = `[!Link Image]
+1. 5² dibaca ....
+a) Lima akar dua
+b) Dua pangkat lima
+c) Lima kuadrat
+d) Dua kuadrat
+Correct answer: c
+
 2. 25² sama dengan ....
 a) 25 + 25
 b) 25 x 25
@@ -251,10 +285,11 @@ Correct answer: b`;
     if (!inputText.trim() && parseImages.length === 0) return;
 
     const templateSnapshot = inputText;
+    const textForParse = stripStandaloneMediaLines(inputText.trim());
     setIsParsing(true);
     try {
       const result = await parseQuestions(
-        inputText.trim(),
+        textForParse,
         parseImages.length > 0 ? parseImages : undefined
       );
       setParseResult(result);
@@ -263,6 +298,7 @@ Correct answer: b`;
         let withIds: WorkingQuestion[] = result.questions.map((q) => ({
           ...q,
           tags: q.tags ?? [],
+          images: [...(q.images ?? [])],
           imageUrls: [...(q.imageUrls ?? [])],
           id:
             typeof crypto !== 'undefined' && crypto.randomUUID
@@ -580,11 +616,11 @@ Correct answer: b`;
                       </div>
                       <p className="text-xs text-muted-foreground space-y-1">
                         <span className="block">
-                          Baris <code className="rounded bg-muted px-1 text-[11px]">[!Link Image]</code> menandai foto yang
-                          diunggah ke soal tepat di atasnya; setelah <strong>Simpan ke bank</strong> URL akan tersimpan di{' '}
-                          <code className="text-[11px]">image_urls</code> dan <strong>tampil saat murid mengerjakan ujian</strong>.
-                          Bisa juga tautan langsung satu baris (https …png/jpg…) atau{' '}
-                          <code className="text-[11px]">{`![.](url)`}</code>.
+                          Gambar mengikuti <strong>posisi di teks</strong>: sebelum teks soal = atas; setelah teks / sebelum opsi = bawah;
+                          setelah opsi = bawah (setelah pilihan); di antara soal 1 dan 2 = atas soal 2. Opsi:{' '}
+                          <code className="text-[11px]">a) teks [!https://…]</code> atau{' '}
+                          <code className="text-[11px]">[!option-b https://…]</code>. Eksplisit:{' '}
+                          <code className="text-[11px]">[!above url]</code>, <code className="text-[11px]">[!below url]</code>.
                         </span>
                         <span className="block">
                           JPEG/PNG/WebP/GIF • maks. 8 gambar • ±4&nbsp;MB/gambar. Mode gambar butuh{' '}
@@ -628,14 +664,28 @@ Correct answer: b`;
                         size="sm"
                         type="button"
                         onClick={() => {
-                          setInputText(sampleTextWithImagePlaceholder);
-                          toast.message('Contoh Indo + [!Link Image] dimuat', {
+                          setInputText(sampleTextWithImageUrl);
+                          toast.message('Contoh Indo + [!URL gambar] dimuat', {
                             description:
-                              'Unggah foto diagram untuk soal no. 1 di kotak Gambar — lalu Parse (butuh AI vision di backend).',
+                              'Soal 1: atas + bawah teks. Soal 2: atas teks + gambar di opsi b). Lalu Parse.',
                           });
                         }}
                       >
-                        {"Contoh teks Indo + [!Link Image]"}
+                        Contoh Indo + [!URL gambar]
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        type="button"
+                        onClick={() => {
+                          setInputText(sampleTextWithImagePlaceholder);
+                          toast.message('Contoh Indo + [!Link Image] dimuat', {
+                            description:
+                              'Unggah 1 foto — penanda sebelum 1. = lampiran soal 1.',
+                          });
+                        }}
+                      >
+                        Contoh + upload gambar
                       </Button>
                     </div>
                   </TabsContent>
@@ -1159,25 +1209,14 @@ Correct answer: b`;
                                   </div>
                                 ) : (
                                   <>
-                                    <div>
-                                      <h4 className="font-semibold">{q.title}</h4>
-                                      <p className="text-sm text-muted-foreground whitespace-pre-wrap">{q.content}</p>
-                                    </div>
-
-                                    {q.imageUrls && q.imageUrls.length > 0 && (
-                                      <div className="flex flex-wrap gap-2 rounded-lg border border-border bg-muted/20 p-2">
-                                        {q.imageUrls.map((src) => (
-                                          <div key={src} className="relative max-w-full">
-                                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                                            <img
-                                              src={src}
-                                              alt=""
-                                              className="max-h-48 max-w-full rounded-md border object-contain bg-background"
-                                            />
-                                          </div>
-                                        ))}
-                                      </div>
-                                    )}
+                                    <QuestionStemWithImages
+                                      title={q.title}
+                                      content={q.content}
+                                      images={q.images}
+                                      imageUrls={q.imageUrls}
+                                      titleClassName="font-semibold"
+                                      contentClassName="text-sm text-muted-foreground whitespace-pre-wrap"
+                                    />
 
                                     {q.options && q.options.length > 0 && (
                                       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -1190,15 +1229,20 @@ Correct answer: b`;
                                             <div
                                               key={i}
                                               className={cn(
-                                                'flex items-center gap-2 rounded-lg border p-2 text-sm',
+                                                'flex flex-col gap-2 rounded-lg border p-2 text-sm',
                                                 isCorrect
                                                   ? 'border-green-500/50 bg-green-500/10 text-green-700 dark:text-green-400'
                                                   : 'bg-muted/50'
                                               )}
                                             >
-                                              <span className="font-medium">{String.fromCharCode(97 + i)})</span>
-                                              <span className="min-w-0 flex-1">{option}</span>
-                                              {isCorrect && <CheckCircle2 className="h-4 w-4 shrink-0" />}
+                                              <div className="flex items-center gap-2">
+                                                <span className="font-medium">{String.fromCharCode(97 + i)})</span>
+                                                <span className="min-w-0 flex-1">
+                                                  {stripMediaMarkersFromText(option)}
+                                                </span>
+                                                {isCorrect && <CheckCircle2 className="h-4 w-4 shrink-0" />}
+                                              </div>
+                                              <OptionImageDisplay images={q.images} optionIndex={i} />
                                             </div>
                                           );
                                         })}

@@ -38,6 +38,7 @@ import {
   ChevronLeft,
   Loader2,
 } from 'lucide-react';
+import { QuestionStemWithImages } from '@/components/shared/question-image-display';
 import { cn } from '@/lib/utils';
 import { GRADE_OPTIONS, formatGradeLabel } from '@/lib/constants/grades';
 import { Question } from '@/lib/types';
@@ -627,7 +628,12 @@ export function ExamWizard({ examId }: ExamWizardProps) {
                             <span className="font-medium">{q.title}</span>
                             <Badge variant="secondary" className="ml-auto">{q.points} pts</Badge>
                           </div>
-                          <p className="text-muted-foreground mb-2">{q.content}</p>
+                          <QuestionStemWithImages
+                            content={q.content}
+                            images={q.images}
+                            imageUrls={q.imageUrls}
+                            contentClassName="text-muted-foreground mb-2"
+                          />
                           {q.type === 'multiple-choice' && q.options && q.options.length > 0 && (
                             <div className="grid grid-cols-2 gap-1 ml-1">
                               {q.options.map((opt, optIdx) => (

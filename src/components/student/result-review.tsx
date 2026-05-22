@@ -3,6 +3,8 @@
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import type { AnswerReview } from '@/lib/types';
+import { OptionImageDisplay, QuestionStemWithImages } from '@/components/shared/question-image-display';
+import { stripMediaMarkersFromText } from '@/lib/question-images';
 import { cn, formatNumber } from '@/lib/utils';
 import { CheckCircle2, Clock, XCircle } from 'lucide-react';
 
@@ -62,10 +64,14 @@ function AnswerReviewCard({
             <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
               Soal {index} · {typeLabel}
             </p>
-            <CardTitle className="text-base leading-snug">{title}</CardTitle>
-            {q?.content && q.content !== title && (
-              <p className="text-sm text-muted-foreground whitespace-pre-wrap">{q.content}</p>
-            )}
+            <QuestionStemWithImages
+              title={title}
+              content={q?.content && q.content !== title ? q.content : undefined}
+              images={q?.images}
+              imageUrls={q?.imageUrls}
+              titleClassName="text-base leading-snug"
+              contentClassName="text-sm text-muted-foreground whitespace-pre-wrap"
+            />
           </div>
           <div className="flex items-center gap-2 shrink-0">
             {answer.pendingReview ? (
@@ -113,14 +119,15 @@ function AnswerReviewCard({
                   <li
                     key={i}
                     className={cn(
-                      'text-sm rounded-lg border px-3 py-2',
+                      'text-sm rounded-lg border px-3 py-2 flex flex-col gap-2',
                       isCorrectOpt && 'border-emerald-500/50 bg-emerald-500/10',
                       isStudentPick && !isCorrectOpt && 'border-destructive/50 bg-destructive/5',
                       !isStudentPick && !isCorrectOpt && 'border-border'
                     )}
                   >
                     <span className="font-medium mr-2">{letter}.</span>
-                    {opt}
+                    <span className="flex-1">{stripMediaMarkersFromText(opt)}</span>
+                    <OptionImageDisplay images={q?.images} optionIndex={i} className="w-full" />
                     {isStudentPick && (
                       <span className="ml-2 text-xs text-muted-foreground">(jawaban Anda)</span>
                     )}

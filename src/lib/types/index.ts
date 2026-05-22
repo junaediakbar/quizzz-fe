@@ -14,6 +14,9 @@ export interface User {
 export type QuestionType = 'multiple-choice' | 'true-false' | 'short-answer' | 'essay' | 'matching' | 'fill-blank';
 export type DifficultyLevel = 'easy' | 'medium' | 'hard';
 
+export type { QuestionImage, QuestionImagePosition } from '@/lib/question-images';
+import type { QuestionImage } from '@/lib/question-images';
+
 export interface Question {
   id: string;
   type: QuestionType;
@@ -25,7 +28,9 @@ export interface Question {
   difficulty: DifficultyLevel;
   points: number;
   tags: string[];
-  /** Public image URLs (e.g. Cloudinary) shown with the question */
+  /** Gambar berposisi (atas / bawah teks / opsi) */
+  images?: QuestionImage[];
+  /** Semua URL (legacy / ringkasan); string[] lama = dianggap below */
   imageUrls?: string[];
   categoryId?: string;
   createdBy: string;
@@ -98,6 +103,7 @@ export interface AnswerReviewQuestion {
   options?: string[];
   explanation?: string;
   points: number;
+  images?: QuestionImage[];
   imageUrls?: string[];
 }
 
@@ -193,7 +199,7 @@ export interface ParsedQuestion {
   difficulty: DifficultyLevel;
   points: number;
   tags: string[];
-  /** URL gambar HTTPS (mis. dari Cloudinary) — muncul saat murid mengerjakan */
+  images?: QuestionImage[];
   imageUrls?: string[];
 }
 

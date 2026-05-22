@@ -18,6 +18,7 @@ import {
   ActivityItem,
 } from '@/lib/types';
 import { clampSeconds } from '@/lib/utils';
+import { flattenImageUrls, normalizeQuestionImages } from '@/lib/question-images';
 
 const toDate = (v: unknown): Date => {
   if (v instanceof Date) return v;
@@ -97,18 +98,16 @@ export function mapQuestion(raw: Record<string, unknown>): Question {
     }
   }
 
-  let imageUrls: string[] | undefined;
-  const iu = raw.image_urls ?? raw.imageUrls;
-  if (Array.isArray(iu)) {
-    imageUrls = (iu as unknown[]).map((x) => String(x));
-  } else if (typeof iu === 'string' && iu) {
+  let imagesRaw: unknown = raw.images ?? raw.image_urls ?? raw.imageUrls;
+  if (typeof imagesRaw === 'string' && imagesRaw) {
     try {
-      const p = JSON.parse(iu);
-      if (Array.isArray(p)) imageUrls = p.map((x) => String(x));
+      imagesRaw = JSON.parse(imagesRaw);
     } catch {
-      /* ignore */
+      imagesRaw = undefined;
     }
   }
+  const images = normalizeQuestionImages(imagesRaw);
+  const imageUrls = images.length > 0 ? flattenImageUrls(images) : undefined;
 
   return {
     id: String(raw.id ?? ''),
@@ -124,6 +123,7 @@ export function mapQuestion(raw: Record<string, unknown>): Question {
     difficulty: (raw.difficulty as DifficultyLevel) || 'medium',
     points: Number(raw.points ?? 5),
     tags,
+    images: images.length > 0 ? images : undefined,
     imageUrls,
     categoryId: raw.category_id ? String(raw.category_id) : undefined,
     createdBy: String(raw.created_by ?? raw.createdBy ?? ''),
@@ -165,6 +165,15 @@ export function mapExam(raw: Record<string, unknown>): Exam {
 }
 
 function mapAnswerReviewQuestion(raw: Record<string, unknown>): AnswerReviewQuestion {
+  let imagesRaw: unknown = raw.images ?? raw.image_urls ?? raw.imageUrls;
+  if (typeof imagesRaw === 'string' && imagesRaw) {
+    try {
+      imagesRaw = JSON.parse(imagesRaw);
+    } catch {
+      imagesRaw = undefined;
+    }
+  }
+  const images = normalizeQuestionImages(imagesRaw);
   return {
     id: String(raw.id ?? ''),
     type: (raw.type as AnswerReviewQuestion['type']) || 'multiple-choice',
@@ -173,11 +182,8 @@ function mapAnswerReviewQuestion(raw: Record<string, unknown>): AnswerReviewQues
     options: Array.isArray(raw.options) ? (raw.options as string[]) : undefined,
     explanation: raw.explanation ? String(raw.explanation) : undefined,
     points: Number(raw.points ?? 0),
-    imageUrls: Array.isArray(raw.image_urls)
-      ? (raw.image_urls as string[])
-      : Array.isArray(raw.imageUrls)
-        ? (raw.imageUrls as string[])
-        : undefined,
+    images: images.length > 0 ? images : undefined,
+    imageUrls: images.length > 0 ? flattenImageUrls(images) : undefined,
   };
 }
 
@@ -306,17 +312,22 @@ export function mapParseResult(raw: Record<string, unknown>): ParseResult {
 }
 
 function mapParsedQuestion(raw: Record<string, unknown>): ParsedQuestion {
-  let imageUrls: string[] | undefined;
-  const iu = raw.image_urls ?? raw.imageUrls;
-  if (Array.isArray(iu)) {
-    imageUrls = (iu as unknown[]).map((x) => String(x)).filter(Boolean);
-    if (imageUrls.length === 0) imageUrls = undefined;
+  let imagesRaw: unknown = raw.images ?? raw.image_urls ?? raw.imageUrls;
+  if (typeof imagesRaw === 'string' && imagesRaw) {
+    try {
+      imagesRaw = JSON.parse(imagesRaw);
+    } catch {
+      imagesRaw = undefined;
+    }
   }
+  const images = normalizeQuestionImages(imagesRaw);
+  const imageUrls = images.length > 0 ? flattenImageUrls(images) : undefined;
   return {
     type: (raw.type as ParsedQuestion['type']) || 'multiple-choice',
     title: String(raw.title ?? ''),
     content: String(raw.content ?? ''),
     options: Array.isArray(raw.options) ? (raw.options as string[]) : undefined,
+    images: images.length > 0 ? images : undefined,
     imageUrls,
     correctAnswer: String(raw.correct_answer ?? ''),
     explanation: raw.explanation ? String(raw.explanation) : undefined,

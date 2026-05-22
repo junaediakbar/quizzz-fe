@@ -29,6 +29,8 @@ import {
   WifiOff,
   Wifi,
 } from 'lucide-react';
+import { OptionImageDisplay, QuestionStemWithImages } from '@/components/shared/question-image-display';
+import { stripMediaMarkersFromText } from '@/lib/question-images';
 import { cn, formatCountdown, clampSeconds } from '@/lib/utils';
 import { Question } from '@/lib/types';
 import { examsApi, sessionsApi } from '@/lib/api';
@@ -594,25 +596,14 @@ export default function ExamPage() {
                 </div>
 
                 <div className="mb-8">
-                  <h2 className="text-lg md:text-[18px] font-medium leading-relaxed mb-3 font-heading">
-                    {currentQuestion.title}
-                  </h2>
-                  <p className="text-[16px] md:text-[18px] leading-relaxed text-muted-foreground">
-                    {currentQuestion.content}
-                  </p>
-                  {currentQuestion.imageUrls && currentQuestion.imageUrls.length > 0 && (
-                    <div className="mt-4 space-y-3">
-                      {currentQuestion.imageUrls.map((url) => (
-                        <img
-                          key={url}
-                          src={url}
-                          alt=""
-                          className="max-w-full h-auto rounded-lg border border-border shadow-sm"
-                          loading="lazy"
-                        />
-                      ))}
-                    </div>
-                  )}
+                  <QuestionStemWithImages
+                    title={currentQuestion.title}
+                    content={currentQuestion.content}
+                    images={currentQuestion.images}
+                    imageUrls={currentQuestion.imageUrls}
+                    titleClassName="text-lg md:text-[18px] font-medium leading-relaxed mb-3 font-heading"
+                    contentClassName="text-[16px] md:text-[18px] leading-relaxed text-muted-foreground"
+                  />
                 </div>
 
                 <div className="space-y-3">
@@ -633,7 +624,11 @@ export default function ExamPage() {
                           <span className="font-medium text-primary mr-2">
                             {String.fromCharCode(65 + index)}.
                           </span>
-                          {option}
+                          <span className="block">{stripMediaMarkersFromText(option)}</span>
+                          <OptionImageDisplay
+                            images={currentQuestion.images}
+                            optionIndex={index}
+                          />
                         </button>
                       ))}
                     </div>

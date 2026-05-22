@@ -12,8 +12,8 @@ export interface CreateQuestionRequest {
   difficulty: 'easy' | 'medium' | 'hard';
   points: number;
   tags?: string[];
-  /** HTTPS image URLs (from /media/upload or any public URL) */
-  image_urls?: string[];
+  /** string[] legacy, atau { url, position, option_index? }[] */
+  image_urls?: string[] | Record<string, unknown>[];
   category_id?: string;
 }
 
