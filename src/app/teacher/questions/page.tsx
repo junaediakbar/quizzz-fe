@@ -60,6 +60,7 @@ import { questionsApi, CreateQuestionRequest } from '@/lib/api/questions';
 import { mediaApi } from '@/lib/api/media';
 import { questionBanksApi } from '@/lib/api/question-banks';
 import { downloadBlobGet } from '@/lib/api/client';
+import { normalizeImportQuestionsPayload } from '@/lib/question-images';
 import { toast } from 'sonner';
 
 export default function QuestionBankPage() {
@@ -408,20 +409,12 @@ export default function QuestionBankPage() {
       try {
         const text = String(reader.result || '');
         const parsed = JSON.parse(text) as unknown;
-        let arr: CreateQuestionRequest[];
-        if (Array.isArray(parsed)) {
-          arr = parsed as CreateQuestionRequest[];
-        } else if (
-          parsed &&
-          typeof parsed === 'object' &&
-          'questions' in parsed &&
-          Array.isArray((parsed as { questions: unknown }).questions)
-        ) {
-          arr = (parsed as { questions: CreateQuestionRequest[] }).questions;
-        } else {
+        const normalized = normalizeImportQuestionsPayload(parsed);
+        if (!normalized.length) {
           toast.error('Format JSON tidak dikenali');
           return;
         }
+        const arr = normalized as unknown as CreateQuestionRequest[];
         const res = await questionsApi.import(arr);
         toast.success(`Diimpor ${res.imported} soal`);
         if (res.failed?.length) toast.warning(`${res.failed.length} baris gagal`);

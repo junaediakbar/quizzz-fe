@@ -181,6 +181,51 @@ export function isStandaloneMediaMarkerLine(line: string): boolean {
   return extracted.length > 0 && cleanText === '';
 }
 
+/** Ubah satu objek JSON import → CreateQuestionRequest (image_urls berposisi) */
+export function mapJsonToImportQuestion(raw: Record<string, unknown>): Record<string, unknown> {
+  const images = normalizeQuestionImages(raw.image_urls ?? raw.images);
+  const row: Record<string, unknown> = {
+    type: raw.type ?? 'multiple-choice',
+    title: String(raw.title ?? ''),
+    content: String(raw.content ?? ''),
+    correct_answer: String(raw.correct_answer ?? raw.correctAnswer ?? ''),
+    difficulty: raw.difficulty ?? 'medium',
+    points: Number(raw.points ?? 5) || 5,
+  };
+  if (Array.isArray(raw.options)) {
+    row.options = (raw.options as unknown[]).map((x) => String(x));
+  }
+  if (Array.isArray(raw.tags)) {
+    row.tags = (raw.tags as unknown[]).map((x) => String(x));
+  }
+  if (raw.explanation != null && raw.explanation !== '') {
+    row.explanation = String(raw.explanation);
+  }
+  if (raw.category_id != null || raw.categoryId != null) {
+    row.category_id = String(raw.category_id ?? raw.categoryId ?? '');
+  }
+  if (images.length > 0) {
+    row.image_urls = imagesToApiPayload(images);
+  }
+  return row;
+}
+
+/** Normalisasi array JSON import sebelum POST /questions/import */
+export function normalizeImportQuestionsPayload(parsed: unknown): Record<string, unknown>[] {
+  const list = Array.isArray(parsed)
+    ? parsed
+    : parsed &&
+        typeof parsed === 'object' &&
+        'questions' in parsed &&
+        Array.isArray((parsed as { questions: unknown }).questions)
+      ? (parsed as { questions: unknown[] }).questions
+      : [];
+
+  return list
+    .filter((item) => item && typeof item === 'object')
+    .map((item) => mapJsonToImportQuestion(item as Record<string, unknown>));
+}
+
 /** Hapus baris penanda gambar sebelum kirim ke AI parser (templat asli tetap untuk lampiran) */
 export function stripStandaloneMediaLines(text: string): string {
   return text

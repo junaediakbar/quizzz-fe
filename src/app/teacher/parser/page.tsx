@@ -44,6 +44,7 @@ import {
 import { QuestionStemWithImages, OptionImageDisplay } from '@/components/shared/question-image-display';
 import {
   imagesToApiPayload,
+  normalizeImportQuestionsPayload,
   stripMediaMarkersFromText,
   stripStandaloneMediaLines,
 } from '@/lib/question-images';
@@ -400,24 +401,15 @@ Correct answer: b`;
     }
 
     let items: CreateQuestionRequest[];
-    if (Array.isArray(parsed)) {
-      // Direct array format: [{...}, {...}]
-      items = parsed as CreateQuestionRequest[];
-    } else if (
-      parsed &&
-      typeof parsed === 'object' &&
-      'questions' in parsed &&
-      Array.isArray((parsed as { questions: unknown }).questions)
-    ) {
-      // Object with questions field: {"questions": [...]} or AI Parser output: {"success": true, "questions": [...]}
-      items = (parsed as { questions: CreateQuestionRequest[] }).questions;
-    } else {
-      toast.error('Gunakan array [...] atau {"questions":[...]}.');
-      return;
-    }
-
-    if (!items.length) {
-      toast.error('Tidak ada soal di JSON.');
+    try {
+      const normalized = normalizeImportQuestionsPayload(parsed);
+      if (!normalized.length) {
+        toast.error('Gunakan array [...] atau {"questions":[...]}.');
+        return;
+      }
+      items = normalized as unknown as CreateQuestionRequest[];
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Format JSON tidak dikenali');
       return;
     }
 
