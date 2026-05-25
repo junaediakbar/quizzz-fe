@@ -15,12 +15,10 @@ function ImageRow({ urls, className }: { urls: QuestionImage[]; className?: stri
         // eslint-disable-next-line @next/next/no-img-element
         <img
           key={`${img.position}-${img.optionIndex ?? ''}-${img.url}`}
-          src={img.url.replace(/^http:\/\//i, 'https://')}
+          src={img.url}
           alt=""
           className="max-h-48 max-w-full rounded-md border border-border object-contain bg-background shadow-sm"
-          loading="eager"
-          referrerPolicy="no-referrer"
-          crossOrigin="anonymous"
+          loading="lazy"
         />
       ))}
     </div>
