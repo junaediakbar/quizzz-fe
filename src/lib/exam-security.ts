@@ -52,3 +52,12 @@ export function formatMaxViolationsLabel(max: number): string {
   if (max <= 0) return 'Tidak mengunci otomatis';
   return `${max} pelanggaran`;
 }
+
+/** Apply securityEnabled toggle while preserving other config fields */
+export function withSecurityEnabled(config: ExamConfig, enabled: boolean): ExamConfig {
+  return {
+    ...config,
+    securityEnabled: enabled,
+    ...(enabled && config.maxViolations === 0 ? { maxViolations: 3 } : {}),
+  };
+}

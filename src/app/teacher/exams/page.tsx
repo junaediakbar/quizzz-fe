@@ -26,8 +26,10 @@ import {
 import { examsApi } from '@/lib/api';
 import { Exam } from '@/lib/types';
 import { formatGradeLabel } from '@/lib/constants/grades';
+import { withSecurityEnabled } from '@/lib/exam-security';
 import { useAuth } from '@/contexts/AuthContext';
-import { Edit, FileText, Loader2, MoreVertical, Plus, Trash2 } from 'lucide-react';
+import { Edit, FileText, Loader2, MoreVertical, Plus, Shield, ShieldOff, Trash2 } from 'lucide-react';
+import { Switch } from '@/components/ui/switch';
 import { toast } from 'sonner';
 
 function getStatusBadge(status: string) {
@@ -50,6 +52,7 @@ export default function TeacherExamsPage() {
   const [deleting, setDeleting] = useState<Exam | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [togglingId, setTogglingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -91,6 +94,37 @@ export default function TeacherExamsPage() {
     }
   };
 
+  const toggleSecurity = async (exam: Exam, enabled: boolean) => {
+    setTogglingId(exam.id);
+    const prev = exam.config.securityEnabled;
+    const nextConfig = withSecurityEnabled(exam.config, enabled);
+
+    setExams((list) =>
+      list.map((e) => (e.id === exam.id ? { ...e, config: nextConfig } : e))
+    );
+
+    try {
+      const updated = await examsApi.update(exam.id, { config: nextConfig });
+      setExams((list) => list.map((e) => (e.id === exam.id ? updated : e)));
+      toast.success(
+        enabled
+          ? `Keamanan diaktifkan untuk "${exam.title}"`
+          : `Keamanan dinonaktifkan untuk "${exam.title}"`
+      );
+    } catch (e) {
+      setExams((list) =>
+        list.map((item) =>
+          item.id === exam.id
+            ? { ...item, config: { ...item.config, securityEnabled: prev } }
+            : item
+        )
+      );
+      toast.error(e instanceof Error ? e.message : 'Gagal memperbarui pengaturan keamanan');
+    } finally {
+      setTogglingId(null);
+    }
+  };
+
   if (authLoading) {
     return (
       <TeacherNav>
@@ -121,7 +155,8 @@ export default function TeacherExamsPage() {
           <CardHeader>
             <CardTitle>Daftar Ujian</CardTitle>
             <CardDescription>
-              Menghapus ujian juga menghapus sesi siswa dan hasil terkait.
+              Aktifkan atau nonaktifkan mode keamanan per ujian. Menghapus ujian juga menghapus
+              sesi siswa dan hasil terkait.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -158,8 +193,34 @@ export default function TeacherExamsPage() {
                         {exam.questionCount ?? exam.questions?.length ?? 0} soal · Dibuat{' '}
                         {exam.createdAt.toLocaleDateString('id-ID')}
                       </p>
+                      <div className="mt-3 flex flex-wrap items-center gap-2">
+                        {exam.config.securityEnabled ? (
+                          <Badge className="bg-green-500/10 text-green-600 hover:bg-green-500/10 gap-1">
+                            <Shield className="h-3 w-3" />
+                            Keamanan aktif
+                          </Badge>
+                        ) : (
+                          <Badge variant="secondary" className="gap-1">
+                            <ShieldOff className="h-3 w-3" />
+                            Mode standar
+                          </Badge>
+                        )}
+                      </div>
                     </div>
-                    <DropdownMenu>
+                    <div className="flex shrink-0 flex-col items-end gap-2 sm:flex-row sm:items-center">
+                      <div className="flex items-center gap-2 rounded-lg border px-3 py-2">
+                        {togglingId === exam.id && (
+                          <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                        )}
+                        <span className="text-xs text-muted-foreground hidden sm:inline">Keamanan</span>
+                        <Switch
+                          checked={exam.config.securityEnabled}
+                          disabled={togglingId === exam.id}
+                          onCheckedChange={(v) => void toggleSecurity(exam, v)}
+                          aria-label={`Keamanan ${exam.title}`}
+                        />
+                      </div>
+                      <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button variant="ghost" size="icon" className="shrink-0 h-8 w-8">
                           <MoreVertical className="h-4 w-4" />
@@ -181,6 +242,7 @@ export default function TeacherExamsPage() {
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
+                    </div>
                   </div>
                 ))}
               </div>
