@@ -1,5 +1,7 @@
 'use client';
 
+import { MathText } from '@/components/shared/math-text';
+import { proxiedImageUrl } from '@/lib/image-proxy';
 import {
   imagesForPosition,
   type QuestionImage,
@@ -15,7 +17,7 @@ function ImageRow({ urls, className }: { urls: QuestionImage[]; className?: stri
         // eslint-disable-next-line @next/next/no-img-element
         <img
           key={`${img.position}-${img.optionIndex ?? ''}-${img.url}`}
-          src={img.url}
+          src={proxiedImageUrl(img.url)}
           alt=""
           className="max-h-48 max-w-full rounded-md border border-border object-contain bg-background shadow-sm"
           loading="lazy"
@@ -88,9 +90,13 @@ export function QuestionStemWithImages({
 
   return (
     <>
-      {title ? <h2 className={titleClassName}>{title}</h2> : null}
+      {title ? (
+        <h2 className={titleClassName}>
+          <MathText as="span">{title}</MathText>
+        </h2>
+      ) : null}
       <ImageRow urls={above} className={title ? 'mt-3' : undefined} />
-      {content ? <p className={contentClassName}>{content}</p> : null}
+      {content ? <MathText as="p" className={contentClassName}>{content}</MathText> : null}
       <ImageRow urls={below} className={content || title ? 'mt-4' : undefined} />
       <ImageRow urls={after} className="mt-4" />
     </>

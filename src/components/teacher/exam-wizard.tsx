@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { MathText } from '@/components/shared/math-text';
 import { Textarea } from '@/components/ui/textarea';
 import {
   Select,
@@ -467,7 +468,9 @@ export function ExamWizard({ examId }: ExamWizardProps) {
                               </Badge>
                               <Badge variant="outline">{question.points} pts</Badge>
                             </div>
-                            <p className="text-sm text-muted-foreground truncate">{question.content}</p>
+                            <MathText className="text-sm text-muted-foreground truncate block">
+                              {question.content}
+                            </MathText>
                           </div>
                           <div className="flex items-center gap-1">
                             <Button
@@ -798,7 +801,7 @@ export function ExamWizard({ examId }: ExamWizardProps) {
                         <div key={q.id} className="p-3 bg-muted/50 rounded-lg text-sm">
                           <div className="flex items-center gap-3 mb-2">
                             <Badge variant="outline">Q{i + 1}</Badge>
-                            <span className="font-medium">{q.title}</span>
+                            <MathText className="font-medium">{q.title}</MathText>
                             <Badge variant="secondary" className="ml-auto">{q.points} pts</Badge>
                           </div>
                           <QuestionStemWithImages
@@ -811,8 +814,10 @@ export function ExamWizard({ examId }: ExamWizardProps) {
                             <div className="grid grid-cols-2 gap-1 ml-1">
                               {q.options.map((opt, optIdx) => (
                                 <div key={optIdx} className="flex items-center gap-2 text-xs">
-                                  <span className="text-muted-foreground">{String.fromCharCode(65 + optIdx)}.</span>
-                                  <span>{opt}</span>
+                                  <span className="text-muted-foreground shrink-0">
+                                    {String.fromCharCode(65 + optIdx)}.
+                                  </span>
+                                  <MathText className="min-w-0">{opt}</MathText>
                                 </div>
                               ))}
                             </div>
@@ -900,7 +905,9 @@ export function ExamWizard({ examId }: ExamWizardProps) {
                               {question.difficulty}
                             </Badge>
                           </div>
-                          <p className="text-sm text-muted-foreground truncate">{question.content}</p>
+                          <MathText className="text-sm text-muted-foreground truncate block">
+                            {question.content}
+                          </MathText>
                         </div>
                         <Badge variant="outline">{question.points} pts</Badge>
                       </div>

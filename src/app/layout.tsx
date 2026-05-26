@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import { Toaster } from "@/components/ui/sonner";
 import { AuthProvider } from "@/contexts/AuthContext";
+import "katex/dist/katex.min.css";
 import "./globals.css";
 
 /** Matches Stitch DESIGN.md — Inter for exam readability & admin tables */

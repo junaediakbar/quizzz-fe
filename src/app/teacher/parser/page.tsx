@@ -51,6 +51,8 @@ import {
 import { buildParserInputFromPdf } from '@/lib/pdf-parser-input';
 import { TeacherNav } from '@/components/shared/teacher-nav';
 import { toast } from 'sonner';
+import { MathPreview } from '@/components/shared/math-preview';
+import { MathText } from '@/components/shared/math-text';
 import type { DifficultyLevel, ParseResult, ParsedQuestion, QuestionType } from '@/lib/types';
 
 /** Soal hasil parse + id stabil untuk key, seleksi, dan reorder */
@@ -559,12 +561,19 @@ Correct answer: b`;
                       <Label htmlFor="question-input">Questions Text</Label>
                       <Textarea
                         id="question-input"
-                        placeholder="Paste your questions here...&#10;&#10;Example:&#10;1. What is the capital of France?&#10;a) London&#10;b) Berlin&#10;c) Paris&#10;d) Madrid&#10;Correct answer: c"
+                        placeholder="Paste soal di sini...&#10;&#10;Matematika pakai LaTeX: $\sqrt{25}$, $x^2$, $\frac{1}{2}$&#10;&#10;1. Nilai $\sqrt{48} + 3^2$ adalah ...&#10;a) $6\sqrt{2}$&#10;b) $4\sqrt{3} + 9$&#10;Correct answer: b"
                         value={inputText}
                         onChange={(e) => setInputText(e.target.value)}
                         rows={12}
                         className="mt-2 font-mono text-sm"
                       />
+                      {inputText.trim() ? (
+                        <MathPreview
+                          className="mt-2 max-h-48 overflow-y-auto"
+                          value={inputText.slice(0, 2000)}
+                          label="Preview teks (cuplikan)"
+                        />
+                      ) : null}
                     </div>
 
                     <div className="space-y-3 rounded-lg border border-border bg-muted/30 p-4">
@@ -1086,10 +1095,15 @@ Correct answer: b`;
                                     <div>
                                       <Label>Pertanyaan</Label>
                                       <Textarea
-                                        className="mt-1"
+                                        className="mt-1 font-mono text-sm"
                                         rows={3}
                                         value={q.content}
                                         onChange={(e) => updateQuestion(q.id, { content: e.target.value })}
+                                      />
+                                      <MathPreview
+                                        className="mt-2"
+                                        value={q.content}
+                                        label="Preview pertanyaan"
                                       />
                                     </div>
                                     {q.type === 'multiple-choice' && (
@@ -1107,6 +1121,14 @@ Correct answer: b`;
                                             updateQuestion(q.id, { options: opts.length ? opts : ['', ''] });
                                           }}
                                         />
+                                        {(q.options ?? []).filter(Boolean).map((opt, oi) => (
+                                          <MathPreview
+                                            key={oi}
+                                            className="mt-2"
+                                            value={opt}
+                                            label={`Opsi ${String.fromCharCode(97 + oi)}`}
+                                          />
+                                        ))}
                                       </div>
                                     )}
                                     <div className="grid gap-3 sm:grid-cols-2">
@@ -1145,7 +1167,7 @@ Correct answer: b`;
                                     <div>
                                       <Label>Penjelasan (opsional)</Label>
                                       <Textarea
-                                        className="mt-1"
+                                        className="mt-1 font-mono text-sm"
                                         rows={2}
                                         value={q.explanation ?? ''}
                                         onChange={(e) =>
@@ -1154,6 +1176,13 @@ Correct answer: b`;
                                           })
                                         }
                                       />
+                                      {q.explanation ? (
+                                        <MathPreview
+                                          className="mt-2"
+                                          value={q.explanation}
+                                          label="Preview penjelasan"
+                                        />
+                                      ) : null}
                                     </div>
                                     <div>
                                       <Label>Tags (koma)</Label>
@@ -1229,9 +1258,9 @@ Correct answer: b`;
                                             >
                                               <div className="flex items-center gap-2">
                                                 <span className="font-medium">{String.fromCharCode(97 + i)})</span>
-                                                <span className="min-w-0 flex-1">
+                                                <MathText className="min-w-0 flex-1">
                                                   {stripMediaMarkersFromText(option)}
-                                                </span>
+                                                </MathText>
                                                 {isCorrect && <CheckCircle2 className="h-4 w-4 shrink-0" />}
                                               </div>
                                               <OptionImageDisplay images={q.images} optionIndex={i} />
@@ -1245,7 +1274,7 @@ Correct answer: b`;
                                       <div className="rounded-lg bg-blue-500/10 p-3">
                                         <p className="text-sm">
                                           <span className="font-medium">Penjelasan: </span>
-                                          {q.explanation}
+                                          <MathText as="span">{q.explanation}</MathText>
                                         </p>
                                       </div>
                                     )}

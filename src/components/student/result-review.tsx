@@ -4,6 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import type { AnswerReview } from '@/lib/types';
 import { OptionImageDisplay, QuestionStemWithImages } from '@/components/shared/question-image-display';
+import { MathText } from '@/components/shared/math-text';
 import { stripMediaMarkersFromText } from '@/lib/question-images';
 import { cn, formatNumber } from '@/lib/utils';
 import { CheckCircle2, Clock, XCircle } from 'lucide-react';
@@ -126,7 +127,7 @@ function AnswerReviewCard({
                     )}
                   >
                     <span className="font-medium mr-2">{letter}.</span>
-                    <span className="flex-1">{stripMediaMarkersFromText(opt)}</span>
+                    <MathText className="flex-1">{stripMediaMarkersFromText(opt)}</MathText>
                     <OptionImageDisplay images={q?.images} optionIndex={i} className="w-full" />
                     {isStudentPick && (
                       <span className="ml-2 text-xs text-muted-foreground">(jawaban Anda)</span>
@@ -144,18 +145,18 @@ function AnswerReviewCard({
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="rounded-lg bg-muted/50 p-3">
             <p className="text-xs font-medium text-muted-foreground mb-1">Jawaban Anda</p>
-            <p className="text-sm font-medium whitespace-pre-wrap">
+            <MathText as="p" className="text-sm font-medium">
               {formatAnswer(answer.studentAnswer)}
-            </p>
+            </MathText>
           </div>
           {showAnswerKey && answer.correctAnswer !== undefined && (
             <div className="rounded-lg bg-emerald-500/10 border border-emerald-500/20 p-3">
               <p className="text-xs font-medium text-emerald-700 dark:text-emerald-400 mb-1">
                 Kunci Jawaban
               </p>
-              <p className="text-sm font-medium whitespace-pre-wrap">
+              <MathText as="p" className="text-sm font-medium">
                 {formatAnswer(answer.correctAnswer)}
-              </p>
+              </MathText>
             </div>
           )}
         </div>
@@ -163,7 +164,9 @@ function AnswerReviewCard({
         {showAnswerKey && q?.explanation && (
           <div className="rounded-lg border border-dashed p-3">
             <p className="text-xs font-medium text-muted-foreground mb-1">Penjelasan</p>
-            <p className="text-sm whitespace-pre-wrap">{q.explanation}</p>
+            <MathText as="p" className="text-sm">
+              {q.explanation}
+            </MathText>
           </div>
         )}
 

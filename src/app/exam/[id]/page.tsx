@@ -30,6 +30,7 @@ import {
   Wifi,
 } from 'lucide-react';
 import { OptionImageDisplay, QuestionStemWithImages } from '@/components/shared/question-image-display';
+import { MathText } from '@/components/shared/math-text';
 import { stripMediaMarkersFromText } from '@/lib/question-images';
 import { cn, formatCountdown, clampSeconds } from '@/lib/utils';
 import { Question } from '@/lib/types';
@@ -687,9 +688,9 @@ export default function ExamPage() {
                             {String.fromCharCode(65 + index)}.
                           </span>
                           <div className="flex-1 min-w-0 space-y-2">
-                            <span className="leading-relaxed">
+                            <MathText className="leading-relaxed">
                               {stripMediaMarkersFromText(option)}
-                            </span>
+                            </MathText>
                             <OptionImageDisplay
                               images={currentQuestion.images}
                               optionIndex={index}

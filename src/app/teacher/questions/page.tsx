@@ -6,6 +6,8 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { MathPreview } from '@/components/shared/math-preview';
+import { MathText } from '@/components/shared/math-text';
 import { Textarea } from '@/components/ui/textarea';
 import {
   Table,
@@ -60,6 +62,7 @@ import { questionsApi, CreateQuestionRequest } from '@/lib/api/questions';
 import { mediaApi } from '@/lib/api/media';
 import { questionBanksApi } from '@/lib/api/question-banks';
 import { downloadBlobGet } from '@/lib/api/client';
+import { proxiedImageUrl } from '@/lib/image-proxy';
 import { normalizeImportQuestionsPayload } from '@/lib/question-images';
 import { toast } from 'sonner';
 
@@ -762,7 +765,9 @@ export default function QuestionBankPage() {
                                     </Badge>
                                   )}
                                 </div>
-                                <p className="text-sm text-muted-foreground line-clamp-1">{question.content}</p>
+                                <MathText className="text-sm text-muted-foreground line-clamp-1 block">
+                                  {question.content}
+                                </MathText>
                               </div>
                             </div>
                           </TableCell>
@@ -883,7 +888,13 @@ export default function QuestionBankPage() {
             </div>
             <div>
               <Label>Pertanyaan</Label>
-              <Textarea className="mt-1" rows={3} value={newQ.content} onChange={(e) => setNewQ((s) => ({ ...s, content: e.target.value }))} />
+              <Textarea
+                className="mt-1 font-mono text-sm"
+                rows={3}
+                value={newQ.content}
+                onChange={(e) => setNewQ((s) => ({ ...s, content: e.target.value }))}
+              />
+              <MathPreview className="mt-2" value={newQ.content} label="Preview pertanyaan" />
             </div>
             {newQ.type === 'multiple-choice' && (
               <div>
@@ -895,6 +906,18 @@ export default function QuestionBankPage() {
                   value={newQ.optionsText}
                   onChange={(e) => setNewQ((s) => ({ ...s, optionsText: e.target.value }))}
                 />
+                {newQ.optionsText
+                  .split('\n')
+                  .map((s) => s.trim())
+                  .filter(Boolean)
+                  .map((opt, oi) => (
+                    <MathPreview
+                      key={oi}
+                      className="mt-2"
+                      value={opt}
+                      label={`Preview opsi ${String.fromCharCode(65 + oi)}`}
+                    />
+                  ))}
               </div>
             )}
             <div>
@@ -1044,7 +1067,9 @@ export default function QuestionBankPage() {
               <CardContent className="p-4 space-y-4">
                 {/* Question Text */}
                 <div>
-                  <p className="text-base leading-relaxed">{viewQ?.content}</p>
+                  <MathText as="p" className="text-base leading-relaxed">
+                    {viewQ?.content ?? ''}
+                  </MathText>
                 </div>
 
                 {/* Images */}
@@ -1053,7 +1078,7 @@ export default function QuestionBankPage() {
                     {viewQ.imageUrls.map((url, idx) => (
                       <div key={idx} className="rounded-lg overflow-hidden border border-border">
                         <img
-                          src={url}
+                          src={proxiedImageUrl(url)}
                           alt={`Question image ${idx + 1}`}
                           className="w-full h-auto"
                         />
@@ -1085,12 +1110,14 @@ export default function QuestionBankPage() {
                                 <span className="flex-shrink-0 w-6 h-6 rounded-full bg-muted flex items-center justify-center text-xs font-medium">
                                   {letter}
                                 </span>
-                                <span className={cn(
-                                  'flex-1',
-                                  isCorrect && 'font-medium text-green-700 dark:text-green-400'
-                                )}>
+                                <MathText
+                                  className={cn(
+                                    'flex-1',
+                                    isCorrect && 'font-medium text-green-700 dark:text-green-400'
+                                  )}
+                                >
                                   {option}
-                                </span>
+                                </MathText>
                                 {isCorrect && (
                                   <div className="flex-shrink-0">
                                     <CheckCircle2 className="w-5 h-5 text-green-600" />
@@ -1184,11 +1211,11 @@ export default function QuestionBankPage() {
                 {/* Correct Answer */}
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-medium">Jawaban benar:</span>
-                  <span className="text-sm font-semibold text-green-600 dark:text-green-400">
+                  <MathText className="text-sm font-semibold text-green-600 dark:text-green-400">
                     {Array.isArray(viewQ?.correctAnswer)
                       ? viewQ.correctAnswer.join(', ')
                       : String(viewQ?.correctAnswer ?? '-')}
-                  </span>
+                  </MathText>
                 </div>
 
                 {/* Options Count */}
@@ -1208,7 +1235,9 @@ export default function QuestionBankPage() {
                 {viewQ?.explanation && (
                   <div className="space-y-1">
                     <p className="text-sm font-medium">Penjelasan:</p>
-                    <p className="text-sm text-muted-foreground">{viewQ.explanation}</p>
+                    <MathText as="p" className="text-sm text-muted-foreground">
+                      {viewQ.explanation}
+                    </MathText>
                   </div>
                 )}
 
@@ -1346,7 +1375,9 @@ function FixOptionItem({
         <div className="flex items-start justify-between gap-4">
           <div className="flex-1 min-w-0">
             <p className="font-medium truncate">{question.title}</p>
-            <p className="text-sm text-muted-foreground line-clamp-1">{question.content}</p>
+            <MathText className="text-sm text-muted-foreground line-clamp-1 block">
+              {question.content}
+            </MathText>
           </div>
           <Badge className="shrink-0 bg-orange-500/10 text-orange-500">
             {question.type}
