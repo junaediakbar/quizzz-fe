@@ -725,124 +725,124 @@ export default function QuestionBankPage() {
                   </div>
                 ) : (
                   <div className="overflow-x-auto -mx-px">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead className="w-[50px]">
-                          <Checkbox
-                            checked={
-                              filteredQuestions.length > 0 &&
-                              selectedQuestions.size === filteredQuestions.length
-                            }
-                            onCheckedChange={toggleAllSelection}
-                          />
-                        </TableHead>
-                        <TableHead>Question</TableHead>
-                        <TableHead>Type</TableHead>
-                        <TableHead>Difficulty</TableHead>
-                        <TableHead>Points</TableHead>
-                        <TableHead>Tags</TableHead>
-                        <TableHead className="w-[140px] text-center">Actions</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {filteredQuestions.map((question) => (
-                        <TableRow key={question.id}>
-                          <TableCell>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="w-[50px]">
                             <Checkbox
-                              checked={selectedQuestions.has(question.id)}
-                              onCheckedChange={() => toggleQuestionSelection(question.id)}
+                              checked={
+                                filteredQuestions.length > 0 &&
+                                selectedQuestions.size === filteredQuestions.length
+                              }
+                              onCheckedChange={toggleAllSelection}
                             />
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex items-start gap-2">
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2 flex-wrap">
-                                  <p className="font-medium">{question.title}</p>
-                                  {question.type === 'multiple-choice' && (!question.options || question.options.length === 0) && (
-                                    <Badge variant="outline" className="bg-orange-500/10 text-orange-500 text-xs shrink-0">
-                                      <span className="mr-1">⚠️</span>Tanpa Opsi
-                                    </Badge>
-                                  )}
-                                </div>
-                                <MathText className="text-sm text-muted-foreground line-clamp-1 block">
-                                  {question.content}
-                                </MathText>
-                              </div>
-                            </div>
-                          </TableCell>
-                          <TableCell>{getTypeBadge(question.type)}</TableCell>
-                          <TableCell>{getDifficultyBadge(question.difficulty)}</TableCell>
-                          <TableCell>{question.points}</TableCell>
-                          <TableCell>
-                            <div className="flex flex-wrap gap-1">
-                              {(question.tags || []).slice(0, 2).map((tag) => (
-                                <Badge key={tag} variant="outline" className="text-xs">
-                                  {tag}
-                                </Badge>
-                              ))}
-                              {(question.tags || []).length > 2 && (
-                                <Badge variant="outline" className="text-xs">
-                                  +{(question.tags || []).length - 2}
-                                </Badge>
-                              )}
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex items-center gap-1">
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8"
-                                onClick={() => setViewQ(question)}
-                                title="View detail"
-                              >
-                                <Eye className="h-4 w-4" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8"
-                                onClick={() => handleDuplicate(question)}
-                                title="Duplicate"
-                              >
-                                <Copy className="h-4 w-4" />
-                              </Button>
-                              <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-8 w-8 text-destructive hover:text-destructive"
-                                    title="More options"
-                                  >
-                                    <MoreVertical className="h-4 w-4" />
-                                  </Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end">
-                                  <DropdownMenuItem onClick={() => setViewQ(question)}>
-                                    <Eye className="w-4 h-4 mr-2" />
-                                    View
-                                  </DropdownMenuItem>
-                                  <DropdownMenuItem onClick={() => handleDuplicate(question)}>
-                                    <Copy className="w-4 h-4 mr-2" />
-                                    Duplicate
-                                  </DropdownMenuItem>
-                                  <DropdownMenuItem
-                                    className="text-destructive"
-                                    onClick={() => handleDelete(question.id)}
-                                  >
-                                    <Trash2 className="w-4 h-4 mr-2" />
-                                    Delete
-                                  </DropdownMenuItem>
-                                </DropdownMenuContent>
-                              </DropdownMenu>
-                            </div>
-                          </TableCell>
+                          </TableHead>
+                          <TableHead>Question</TableHead>
+                          <TableHead>Type</TableHead>
+                          <TableHead>Difficulty</TableHead>
+                          <TableHead>Points</TableHead>
+                          <TableHead>Tags</TableHead>
+                          <TableHead className="w-[140px] text-center">Actions</TableHead>
                         </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
+                      </TableHeader>
+                      <TableBody>
+                        {filteredQuestions.map((question) => (
+                          <TableRow key={question.id}>
+                            <TableCell>
+                              <Checkbox
+                                checked={selectedQuestions.has(question.id)}
+                                onCheckedChange={() => toggleQuestionSelection(question.id)}
+                              />
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex items-start gap-2">
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <p className="font-medium">{question.title}</p>
+                                    {question.type === 'multiple-choice' && (!question.options || question.options.length === 0) && (
+                                      <Badge variant="outline" className="bg-orange-500/10 text-orange-500 text-xs shrink-0">
+                                        <span className="mr-1">⚠️</span>Tanpa Opsi
+                                      </Badge>
+                                    )}
+                                  </div>
+                                  <MathText className="text-sm text-muted-foreground line-clamp-1 block">
+                                    {question.content}
+                                  </MathText>
+                                </div>
+                              </div>
+                            </TableCell>
+                            <TableCell>{getTypeBadge(question.type)}</TableCell>
+                            <TableCell>{getDifficultyBadge(question.difficulty)}</TableCell>
+                            <TableCell>{question.points}</TableCell>
+                            <TableCell>
+                              <div className="flex flex-wrap gap-1">
+                                {(question.tags || []).slice(0, 2).map((tag) => (
+                                  <Badge key={tag} variant="outline" className="text-xs">
+                                    {tag}
+                                  </Badge>
+                                ))}
+                                {(question.tags || []).length > 2 && (
+                                  <Badge variant="outline" className="text-xs">
+                                    +{(question.tags || []).length - 2}
+                                  </Badge>
+                                )}
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-1">
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8"
+                                  onClick={() => setViewQ(question)}
+                                  title="View detail"
+                                >
+                                  <Eye className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8"
+                                  onClick={() => handleDuplicate(question)}
+                                  title="Duplicate"
+                                >
+                                  <Copy className="h-4 w-4" />
+                                </Button>
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-8 w-8 text-destructive hover:text-destructive"
+                                      title="More options"
+                                    >
+                                      <MoreVertical className="h-4 w-4" />
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end">
+                                    <DropdownMenuItem onClick={() => setViewQ(question)}>
+                                      <Eye className="w-4 h-4 mr-2" />
+                                      View
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem onClick={() => handleDuplicate(question)}>
+                                      <Copy className="w-4 h-4 mr-2" />
+                                      Duplicate
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem
+                                      className="text-destructive"
+                                      onClick={() => handleDelete(question.id)}
+                                    >
+                                      <Trash2 className="w-4 h-4 mr-2" />
+                                      Delete
+                                    </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
                   </div>
                 )}
                 {!loading && filteredQuestions.length === 0 && (
@@ -1078,7 +1078,7 @@ export default function QuestionBankPage() {
                     {viewQ.imageUrls.map((url, idx) => (
                       <div key={idx} className="rounded-lg overflow-hidden border border-border">
                         <img
-                          src={proxiedImageUrl(url)}
+                          src={url}
                           alt={`Question image ${idx + 1}`}
                           className="w-full h-auto"
                         />
