@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { TeacherNav } from '@/components/shared/teacher-nav';
@@ -28,8 +28,9 @@ import { Exam } from '@/lib/types';
 import { formatGradeLabel } from '@/lib/constants/grades';
 import { withSecurityEnabled } from '@/lib/exam-security';
 import { useAuth } from '@/contexts/AuthContext';
-import { Edit, FileText, Loader2, MoreVertical, Plus, Shield, ShieldOff, Trash2 } from 'lucide-react';
+import { Edit, FileText, Loader2, MoreVertical, Plus, Search, Shield, ShieldOff, Trash2 } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
+import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
 
 function getStatusBadge(status: string) {
@@ -49,10 +50,32 @@ export default function TeacherExamsPage() {
   const { user, isLoading: authLoading } = useAuth();
   const [exams, setExams] = useState<Exam[]>([]);
   const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
   const [deleting, setDeleting] = useState<Exam | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [togglingId, setTogglingId] = useState<string | null>(null);
+
+  const filteredExams = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return exams;
+
+    return exams.filter((exam) => {
+      const gradeLabel = formatGradeLabel(exam.grade);
+      const haystack = [
+        exam.title,
+        exam.subject,
+        gradeLabel,
+        exam.status,
+        exam.description ?? '',
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+
+      return haystack.includes(q);
+    });
+  }, [exams, searchQuery]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -69,7 +92,10 @@ export default function TeacherExamsPage() {
 
   useEffect(() => {
     if (!authLoading && user?.id) {
-      void load();
+      const t = setTimeout(() => {
+        void load();
+      }, 0);
+      return () => clearTimeout(t);
     }
   }, [authLoading, user?.id, load]);
 
@@ -137,7 +163,7 @@ export default function TeacherExamsPage() {
 
   return (
     <TeacherNav userName={user?.name} userAvatar={user?.avatar}>
-      <header className="border-b border-border bg-card px-4 py-4 sm:px-6 flex flex-wrap items-center justify-between gap-3">
+      <header className="shrink-0 border-b border-border bg-card px-4 py-4 sm:px-6 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold">Ujian Saya</h1>
           <p className="text-sm text-muted-foreground">Kelola, edit, dan hapus ujian yang telah dibuat</p>
@@ -150,7 +176,7 @@ export default function TeacherExamsPage() {
         </Button>
       </header>
 
-      <main className="flex-1 p-4 sm:p-6 max-w-5xl mx-auto w-full">
+      <main className="flex-1 min-h-0 overflow-auto p-4 sm:p-6 max-w-5xl mx-auto w-full">
         <Card>
           <CardHeader>
             <CardTitle>Daftar Ujian</CardTitle>
@@ -160,6 +186,24 @@ export default function TeacherExamsPage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
+            {exams.length > 0 && (
+              <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div className="relative w-full sm:max-w-sm">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Cari ujian..."
+                    className="h-9 pl-9"
+                  />
+                </div>
+                {!loading && (
+                  <p className="text-xs text-muted-foreground">
+                    Menampilkan {filteredExams.length} dari {exams.length}
+                  </p>
+                )}
+              </div>
+            )}
             {loading ? (
               <div className="flex justify-center py-12">
                 <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
@@ -174,77 +218,85 @@ export default function TeacherExamsPage() {
               </div>
             ) : (
               <div className="space-y-3">
-                {exams.map((exam) => (
-                  <div
-                    key={exam.id}
-                    className="flex items-start justify-between gap-3 p-4 border rounded-lg hover:bg-muted/40"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-2 mb-1">
-                        <h3 className="font-medium truncate">{exam.title}</h3>
-                        {getStatusBadge(exam.status)}
-                        <Badge variant="outline">{exam.subject}</Badge>
-                        <Badge variant="outline">{formatGradeLabel(exam.grade)}</Badge>
-                      </div>
-                      {exam.description && (
-                        <p className="text-sm text-muted-foreground line-clamp-2">{exam.description}</p>
-                      )}
-                      <p className="text-xs text-muted-foreground mt-2">
-                        {exam.questionCount ?? exam.questions?.length ?? 0} soal · Dibuat{' '}
-                        {exam.createdAt.toLocaleDateString('id-ID')}
-                      </p>
-                      <div className="mt-3 flex flex-wrap items-center gap-2">
-                        {exam.config.securityEnabled ? (
-                          <Badge className="bg-green-500/10 text-green-600 hover:bg-green-500/10 gap-1">
-                            <Shield className="h-3 w-3" />
-                            Keamanan aktif
-                          </Badge>
-                        ) : (
-                          <Badge variant="secondary" className="gap-1">
-                            <ShieldOff className="h-3 w-3" />
-                            Mode standar
-                          </Badge>
-                        )}
-                      </div>
-                    </div>
-                    <div className="flex shrink-0 flex-col items-end gap-2 sm:flex-row sm:items-center">
-                      <div className="flex items-center gap-2 rounded-lg border px-3 py-2">
-                        {togglingId === exam.id && (
-                          <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                        )}
-                        <span className="text-xs text-muted-foreground hidden sm:inline">Keamanan</span>
-                        <Switch
-                          checked={exam.config.securityEnabled}
-                          disabled={togglingId === exam.id}
-                          onCheckedChange={(v) => void toggleSecurity(exam, v)}
-                          aria-label={`Keamanan ${exam.title}`}
-                        />
-                      </div>
-                      <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon" className="shrink-0 h-8 w-8">
-                          <MoreVertical className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem
-                          onClick={() => router.push(`/teacher/exams/${exam.id}/edit`)}
-                        >
-                          <Edit className="w-4 h-4 mr-2" />
-                          Edit ujian
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          className="text-destructive focus:text-destructive"
-                          onClick={() => openDelete(exam)}
-                        >
-                          <Trash2 className="w-4 h-4 mr-2" />
-                          Hapus ujian
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                    </div>
+                {filteredExams.length === 0 ? (
+                  <div className="text-center py-10">
+                    <p className="text-sm text-muted-foreground">
+                      Tidak ada ujian yang cocok dengan pencarian “{searchQuery.trim()}”.
+                    </p>
                   </div>
-                ))}
+                ) : (
+                  filteredExams.map((exam) => (
+                    <div
+                      key={exam.id}
+                      className="flex items-start justify-between gap-3 p-4 border rounded-lg hover:bg-muted/40"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2 mb-1">
+                          <h3 className="font-medium truncate">{exam.title}</h3>
+                          {getStatusBadge(exam.status)}
+                          <Badge variant="outline">{exam.subject}</Badge>
+                          <Badge variant="outline">{formatGradeLabel(exam.grade)}</Badge>
+                        </div>
+                        {exam.description && (
+                          <p className="text-sm text-muted-foreground line-clamp-2">{exam.description}</p>
+                        )}
+                        <p className="text-xs text-muted-foreground mt-2">
+                          {exam.questionCount ?? exam.questions?.length ?? 0} soal · Dibuat{' '}
+                          {exam.createdAt.toLocaleDateString('id-ID')}
+                        </p>
+                        <div className="mt-3 flex flex-wrap items-center gap-2">
+                          {exam.config.securityEnabled ? (
+                            <Badge className="bg-green-500/10 text-green-600 hover:bg-green-500/10 gap-1">
+                              <Shield className="h-3 w-3" />
+                              Keamanan aktif
+                            </Badge>
+                          ) : (
+                            <Badge variant="secondary" className="gap-1">
+                              <ShieldOff className="h-3 w-3" />
+                              Mode standar
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex shrink-0 flex-col items-end gap-2 sm:flex-row sm:items-center">
+                        <div className="flex items-center gap-2 rounded-lg border px-3 py-2">
+                          {togglingId === exam.id && (
+                            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                          )}
+                          <span className="text-xs text-muted-foreground hidden sm:inline">Keamanan</span>
+                          <Switch
+                            checked={exam.config.securityEnabled}
+                            disabled={togglingId === exam.id}
+                            onCheckedChange={(v) => void toggleSecurity(exam, v)}
+                            aria-label={`Keamanan ${exam.title}`}
+                          />
+                        </div>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon" className="shrink-0 h-8 w-8">
+                              <MoreVertical className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                              onClick={() => router.push(`/teacher/exams/${exam.id}/edit`)}
+                            >
+                              <Edit className="w-4 h-4 mr-2" />
+                              Edit ujian
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              className="text-destructive focus:text-destructive"
+                              onClick={() => openDelete(exam)}
+                            >
+                              <Trash2 className="w-4 h-4 mr-2" />
+                              Hapus ujian
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
             )}
           </CardContent>
