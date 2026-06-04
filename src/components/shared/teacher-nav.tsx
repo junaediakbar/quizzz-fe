@@ -9,6 +9,7 @@ import {
   BrainCircuit,
   FileText,
   BarChart3,
+  ImagePlus,
   Settings,
   Bell,
   Search,
@@ -24,6 +25,7 @@ const navItems = [
   { href: '/teacher/students', label: 'Students', icon: GraduationCap },
   { href: '/teacher/questions', label: 'Question Bank', icon: FolderKanban },
   { href: '/teacher/parser', label: 'AI Parser', icon: BrainCircuit },
+  { href: '/teacher/media', label: 'Upload Gambar', icon: ImagePlus },
   { href: '/teacher/exams', label: 'My Exams', icon: FileText },
   { href: '/teacher/results', label: 'Results', icon: BarChart3 },
   { href: '/teacher/settings', label: 'Settings', icon: Settings },
@@ -56,6 +58,7 @@ export function TeacherNav({ userName, children }: TeacherNavProps) {
     if (label === 'AI Parser') return 'AI';
     if (label === 'My Exams') return 'Exams';
     if (label === 'Students') return 'Siswa';
+    if (label === 'Upload Gambar') return 'Upload';
     return label;
   };
 
