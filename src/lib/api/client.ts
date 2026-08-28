@@ -1,6 +1,6 @@
 import { RequestOptions, ApiError } from './types';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080/api/v1';
+const API_URL = process.env.NEXT_BACKEND_URL || 'http://localhost:8080/api/v1';
 
 // Token storage helpers
 const TOKEN_KEY = 'quizapp_token';
@@ -21,7 +21,10 @@ export const removeAuthToken = (): void => {
 };
 
 // Build URL with query parameters
-const buildUrl = (endpoint: string, params?: Record<string, string>): string => {
+const buildUrl = (
+  endpoint: string,
+  params?: Record<string, string>,
+): string => {
   const url = `${API_URL}${endpoint}`;
   if (!params) return url;
 
@@ -39,14 +42,9 @@ const buildUrl = (endpoint: string, params?: Record<string, string>): string => 
 // Main API client function
 export const apiRequest = async <T = unknown>(
   endpoint: string,
-  options: RequestOptions = {}
+  options: RequestOptions = {},
 ): Promise<T> => {
-  const {
-    method = 'GET',
-    body,
-    headers = {},
-    params,
-  } = options;
+  const { method = 'GET', body, headers = {}, params } = options;
 
   const url = buildUrl(endpoint, params);
 
@@ -87,7 +85,9 @@ export const apiRequest = async <T = unknown>(
 
     // Handle other error statuses
     if (!response.ok) {
-      const errorData: ApiError = await response.json().catch(() => ({ error: 'Unknown error' }));
+      const errorData: ApiError = await response
+        .json()
+        .catch(() => ({ error: 'Unknown error' }));
       throw new Error(errorData.error || `HTTP ${response.status}`);
     }
 
@@ -113,23 +113,36 @@ export const apiRequest = async <T = unknown>(
 };
 
 // Convenience methods
-export const get = <T = unknown>(endpoint: string, params?: Record<string, string>): Promise<T> => {
+export const get = <T = unknown>(
+  endpoint: string,
+  params?: Record<string, string>,
+): Promise<T> => {
   return apiRequest<T>(endpoint, { method: 'GET', params });
 };
 
-export const post = <T = unknown>(endpoint: string, body?: unknown): Promise<T> => {
+export const post = <T = unknown>(
+  endpoint: string,
+  body?: unknown,
+): Promise<T> => {
   return apiRequest<T>(endpoint, { method: 'POST', body });
 };
 
 /** Multipart upload (no Content-Type — browser sets boundary). */
-export async function postFormData<T = unknown>(endpoint: string, formData: FormData): Promise<T> {
+export async function postFormData<T = unknown>(
+  endpoint: string,
+  formData: FormData,
+): Promise<T> {
   const url = buildUrl(endpoint);
   const token = getAuthToken();
   const headers: Record<string, string> = {};
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
   }
-  const response = await fetch(url, { method: 'POST', headers, body: formData });
+  const response = await fetch(url, {
+    method: 'POST',
+    headers,
+    body: formData,
+  });
   if (response.status === 401) {
     removeAuthToken();
     if (typeof window !== 'undefined') {
@@ -138,13 +151,18 @@ export async function postFormData<T = unknown>(endpoint: string, formData: Form
     throw new Error('Unauthorized');
   }
   if (!response.ok) {
-    const errorData: ApiError = await response.json().catch(() => ({ error: 'Unknown error' }));
+    const errorData: ApiError = await response
+      .json()
+      .catch(() => ({ error: 'Unknown error' }));
     throw new Error(errorData.error || `HTTP ${response.status}`);
   }
   return (await response.json()) as T;
 }
 
-export const put = <T = unknown>(endpoint: string, body?: unknown): Promise<T> => {
+export const put = <T = unknown>(
+  endpoint: string,
+  body?: unknown,
+): Promise<T> => {
   return apiRequest<T>(endpoint, { method: 'PUT', body });
 };
 
@@ -152,7 +170,10 @@ export const del = <T = unknown>(endpoint: string): Promise<T> => {
   return apiRequest<T>(endpoint, { method: 'DELETE' });
 };
 
-export const patch = <T = unknown>(endpoint: string, body?: unknown): Promise<T> => {
+export const patch = <T = unknown>(
+  endpoint: string,
+  body?: unknown,
+): Promise<T> => {
   return apiRequest<T>(endpoint, { method: 'PATCH', body });
 };
 
@@ -160,7 +181,7 @@ export const patch = <T = unknown>(endpoint: string, body?: unknown): Promise<T>
 export async function downloadBlobGet(
   endpoint: string,
   params?: Record<string, string>,
-  filename = 'download.json'
+  filename = 'download.json',
 ): Promise<void> {
   const url = buildUrl(endpoint, params);
   const token = getAuthToken();

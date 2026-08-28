@@ -13,6 +13,9 @@ import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { cn, formatDurationMinutes, formatNumber, formatPercent } from '@/lib/utils';
 import { formatGradeLabel } from '@/lib/constants/grades';
+import { MathText } from '@/components/shared/math-text';
+import { OptionImageDisplay, QuestionStemWithImages } from '@/components/shared/question-image-display';
+import { stripMediaMarkersFromText } from '@/lib/question-images';
 import {
   ArrowLeft,
   BookOpen,
@@ -27,6 +30,71 @@ function getScoreColor(pct: number) {
   if (pct >= 80) return 'text-emerald-600';
   if (pct >= 60) return 'text-amber-600';
   return 'text-red-600';
+}
+
+function PrintableQuestions({ result }: { result: ExamResult }) {
+  const answers = result.answers ?? [];
+  return (
+    <div className="only-print px-6 py-6">
+      <div className="mb-6">
+        <h1 className="text-2xl font-semibold">{result.examTitle || 'Soal Ujian'}</h1>
+        <p className="text-sm text-muted-foreground">
+          {result.examGrade ? `${formatGradeLabel(result.examGrade)} · ` : ''}
+          {result.submittedAt.toLocaleString('id-ID')}
+        </p>
+      </div>
+
+      {answers.length === 0 ? (
+        <p className="text-sm text-muted-foreground">Soal tidak tersedia untuk hasil ini.</p>
+      ) : (
+        <div className="space-y-5">
+          {answers.map((ans, index) => {
+            const q = ans.question;
+            const title = q?.title || `Soal ${index + 1}`;
+            return (
+              <div key={ans.questionId || index} className="print-avoid-break">
+                <div className="mb-2">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                    Soal {index + 1}
+                  </p>
+                </div>
+
+                <QuestionStemWithImages
+                  title={title}
+                  content={q?.content && q.content !== title ? q.content : undefined}
+                  images={q?.images}
+                  imageUrls={q?.imageUrls}
+                  titleClassName="text-base leading-snug"
+                  contentClassName="text-sm whitespace-pre-wrap"
+                />
+
+                {q?.options && q.options.length > 0 && (
+                  <div className="mt-3">
+                    <ul className="space-y-2">
+                      {q.options.map((opt, i) => {
+                        const letter = String.fromCharCode(65 + i);
+                        return (
+                          <li key={i} className="text-sm">
+                            <div className="flex gap-2">
+                              <span className="font-medium">{letter}.</span>
+                              <div className="min-w-0 flex-1">
+                                <MathText as="span">{stripMediaMarkersFromText(opt)}</MathText>
+                                <OptionImageDisplay images={q?.images} optionIndex={i} className="mt-2" />
+                              </div>
+                            </div>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default function StudentResultDetailPage() {
@@ -89,10 +157,11 @@ export default function StudentResultDetailPage() {
   }
 
   const visible = result.resultsVisible !== false;
+  const canDownloadQuestions = (result.answers ?? []).some((a) => Boolean(a.question));
 
   return (
     <>
-      <div className="border-b bg-background/80">
+      <div className="no-print border-b bg-background/80">
         <div className="mx-auto flex max-w-4xl items-center gap-3 px-4 py-3">
           <Button variant="ghost" size="icon" className="shrink-0" asChild>
             <Link href="/student/results">
@@ -114,7 +183,7 @@ export default function StudentResultDetailPage() {
 
       <main className="mx-auto max-w-4xl space-y-6 px-4 py-6">
         {!visible && (
-          <Alert>
+          <Alert className="no-print">
             <Clock className="h-4 w-4" />
             <AlertDescription>
               {result.message ||
@@ -125,7 +194,7 @@ export default function StudentResultDetailPage() {
 
         {visible && (
           <>
-            <Card>
+            <Card className="no-print">
               <CardHeader>
                 <CardDescription>Ringkasan nilai</CardDescription>
                 <div className="flex flex-wrap items-end justify-between gap-4">
@@ -172,14 +241,25 @@ export default function StudentResultDetailPage() {
               )}
             </Card>
 
-            <section>
+            <section className="no-print">
               <h2 className="text-lg font-semibold mb-4">Review Jawaban</h2>
               <ResultReviewList answers={result.answers} showAnswerKey={showAnswerKey} />
             </section>
           </>
         )}
 
-        <div className="flex gap-3 pb-8">
+        <div className="no-print flex flex-col gap-3 pb-8 sm:flex-row">
+          {canDownloadQuestions && (
+            <Button
+              variant="secondary"
+              className="flex-1 sm:flex-none"
+              onClick={() => {
+                window.print();
+              }}
+            >
+              Download Soal (PDF)
+            </Button>
+          )}
           <Button variant="outline" asChild className="flex-1 sm:flex-none">
             <Link href="/student/results">Semua Hasil</Link>
           </Button>
@@ -188,6 +268,8 @@ export default function StudentResultDetailPage() {
           </Button>
         </div>
       </main>
+
+      {canDownloadQuestions && <PrintableQuestions result={result} />}
     </>
   );
 }

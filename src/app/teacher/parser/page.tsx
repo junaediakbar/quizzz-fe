@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -27,6 +27,7 @@ import {
   X,
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
+import { Switch } from '@/components/ui/switch';
 import {
   Select,
   SelectContent,
@@ -57,6 +58,18 @@ import type { DifficultyLevel, ParseResult, ParsedQuestion, QuestionType } from 
 
 /** Soal hasil parse + id stabil untuk key, seleksi, dan reorder */
 type WorkingQuestion = ParsedQuestion & { id: string };
+
+const PARSER_PERSIST_KEY = 'quizapp_teacher_parser_persist_v1';
+
+type PersistedParserState = {
+  inputMethod: 'text' | 'file' | 'json';
+  inputText: string;
+  jsonImportText: string;
+  sideBySide: boolean;
+  parseResult: ParseResult | null;
+  workingQuestions: WorkingQuestion[];
+  savedAt: number;
+};
 
 function newEmptyWorkingQuestion(): WorkingQuestion {
   const id =
@@ -131,6 +144,58 @@ export default function AIQuestionParserPage() {
   /** Kosong = anggap semua terpilih (sama perilaku checkbox sebelumnya) */
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [sideBySide, setSideBySide] = useState(false);
+
+  const persistToLocal = useCallback(
+    (partial: Partial<PersistedParserState> = {}) => {
+      if (typeof window === 'undefined') return;
+      const next: PersistedParserState = {
+        inputMethod,
+        inputText,
+        jsonImportText,
+        sideBySide,
+        parseResult,
+        workingQuestions,
+        savedAt: Date.now(),
+        ...partial,
+      };
+      try {
+        window.localStorage.setItem(PARSER_PERSIST_KEY, JSON.stringify(next));
+      } catch {
+        toast.error('Gagal menyimpan ke localStorage (data terlalu besar?)');
+      }
+    },
+    [inputMethod, inputText, jsonImportText, sideBySide, parseResult, workingQuestions]
+  );
+
+  useEffect(() => {
+    const t = setTimeout(() => {
+      try {
+        const raw = window.localStorage.getItem(PARSER_PERSIST_KEY);
+        if (!raw) return;
+        const parsed = JSON.parse(raw) as Partial<PersistedParserState>;
+        if (!parsed || typeof parsed !== 'object') return;
+
+        const nextInputMethod: 'text' | 'file' | 'json' =
+          parsed.inputMethod === 'file' || parsed.inputMethod === 'json' ? parsed.inputMethod : 'text';
+
+        setInputMethod(nextInputMethod);
+        setInputText(typeof parsed.inputText === 'string' ? parsed.inputText : '');
+        setJsonImportText(typeof parsed.jsonImportText === 'string' ? parsed.jsonImportText : '');
+        setSideBySide(Boolean(parsed.sideBySide) && nextInputMethod === 'text');
+        setParseResult((parsed.parseResult as ParseResult | null) ?? null);
+        setWorkingQuestions(Array.isArray(parsed.workingQuestions) ? (parsed.workingQuestions as WorkingQuestion[]) : []);
+
+        setSelectedIds(new Set());
+        setEditingId(null);
+        setParseImages([]);
+        setPdfQuestionPageMap([]);
+      } catch {
+        window.localStorage.removeItem(PARSER_PERSIST_KEY);
+      }
+    }, 0);
+    return () => clearTimeout(t);
+  }, []);
 
   const questionTypes: { value: QuestionType; label: string }[] = [
     { value: 'multiple-choice', label: 'Multiple Choice' },
@@ -284,11 +349,12 @@ Correct answer: b`;
   }
 ]`;
 
-  const handleParse = async () => {
+  const handleParse = useCallback(async () => {
     if (!inputText.trim() && parseImages.length === 0) return;
 
     const templateSnapshot = inputText;
     const textForParse = stripStandaloneMediaLines(inputText.trim());
+    persistToLocal({ inputMethod, inputText, jsonImportText, sideBySide });
     setIsParsing(true);
     try {
       const result = await parseQuestions(
@@ -326,6 +392,7 @@ Correct answer: b`;
           toast.error(attErr instanceof Error ? attErr.message : 'Lampiran gambar gagal diproses');
         }
         setWorkingQuestions(withIds);
+        persistToLocal({ parseResult: result, workingQuestions: withIds });
         setSelectedIds(new Set());
         setEditingId(null);
         setParseImages([]);
@@ -333,6 +400,7 @@ Correct answer: b`;
         toast.success(`Berhasil mem-parsing ${result.questions.length} soal.`);
       } else {
         setWorkingQuestions([]);
+        persistToLocal({ parseResult: result, workingQuestions: [] });
         setSelectedIds(new Set());
         setEditingId(null);
         setPdfQuestionPageMap([]);
@@ -345,19 +413,46 @@ Correct answer: b`;
       }
     } catch (error) {
       console.error('Parse error:', error);
-      setParseResult({
+      const errResult: ParseResult = {
         success: false,
         questions: [],
         errors: [error instanceof Error ? error.message : 'Unknown error'],
-      });
+      };
+      setParseResult(errResult);
       setWorkingQuestions([]);
+      persistToLocal({ parseResult: errResult, workingQuestions: [] });
       setSelectedIds(new Set());
       setEditingId(null);
       setPdfQuestionPageMap([]);
     } finally {
       setIsParsing(false);
     }
-  };
+  }, [
+    inputMethod,
+    inputText,
+    jsonImportText,
+    parseImages,
+    pdfQuestionPageMap,
+    persistToLocal,
+    sideBySide,
+  ]);
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.defaultPrevented) return;
+      if (!(e.ctrlKey || e.metaKey)) return;
+      if (e.key.toLowerCase() !== 's') return;
+      if (inputMethod !== 'text') return;
+      e.preventDefault();
+      if (isParsing) return;
+      if (!inputText.trim() && parseImages.length === 0) return;
+      persistToLocal({ inputMethod, inputText, jsonImportText, sideBySide });
+      void handleParse();
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [handleParse, inputMethod, inputText, isParsing, parseImages.length]);
 
   const handleSaveAll = async () => {
     if (!workingQuestions.length) return;
@@ -527,779 +622,817 @@ Correct answer: b`;
               <p className="text-xs text-muted-foreground">Teks + gambar → soal terstruktur (AI vision bila ada gambar)</p>
             </div>
           </div>
+          {inputMethod === 'text' ? (
+            <div className="flex items-center gap-3">
+              <span className="hidden lg:inline text-xs text-muted-foreground">Ctrl/⌘+S: parse ulang</span>
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-muted-foreground">Side by side</span>
+                <Switch checked={sideBySide} onCheckedChange={(v) => setSideBySide(Boolean(v))} />
+              </div>
+            </div>
+          ) : null}
         </header>
 
         {/* Page Content */}
         <main className="flex-1 overflow-auto p-6">
-          <div className="max-w-5xl mx-auto space-y-6">
-            {/* Input Section */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Sparkles className="w-5 h-5 text-primary" />
-                  Input Your Questions
-                </CardTitle>
-                <CardDescription>
-                  Tempel teks soal dan/atau lampirkan gambar (foto/screenshot/halaman cetak). Mode gambar memakai AI vision —
-                  aktifkan <code className="text-xs rounded bg-muted px-1">GEMINI_API_KEY</code> atau{' '}
-                  <code className="text-xs rounded bg-muted px-1">ZAI_API_KEY</code> di backend. Teks tetap bisa tanpa API.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <Tabs
-                  value={inputMethod}
-                  onValueChange={(v) => setInputMethod((v ?? 'text') as 'text' | 'file' | 'json')}
-                >
-                  <TabsList className="grid w-full max-w-2xl grid-cols-3">
-                    <TabsTrigger value="text">Paste Text</TabsTrigger>
-                    <TabsTrigger value="file">Upload File</TabsTrigger>
-                    <TabsTrigger value="json">Import JSON</TabsTrigger>
-                  </TabsList>
+          <div className={cn('mx-auto w-full', sideBySide && inputMethod === 'text' ? 'max-w-7xl' : 'max-w-5xl')}>
+            <div
+              className={cn(
+                sideBySide && inputMethod === 'text'
+                  ? 'grid grid-cols-1 gap-6 lg:grid-cols-2 items-start'
+                  : 'space-y-6'
+              )}
+            >
+              {/* Input Section */}
+              <Card className={cn(sideBySide && inputMethod === 'text' ? 'lg:col-start-1 lg:row-start-1' : '')}>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Sparkles className="w-5 h-5 text-primary" />
+                    Input Your Questions
+                  </CardTitle>
+                  <CardDescription>
+                    Tempel teks soal dan/atau lampirkan gambar (foto/screenshot/halaman cetak). Mode gambar memakai AI vision —
+                    aktifkan <code className="text-xs rounded bg-muted px-1">GEMINI_API_KEY</code> atau{' '}
+                    <code className="text-xs rounded bg-muted px-1">ZAI_API_KEY</code> di backend. Teks tetap bisa tanpa API.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <Tabs
+                    value={inputMethod}
+                    onValueChange={(v) => {
+                      const next = (v ?? 'text') as 'text' | 'file' | 'json';
+                      setInputMethod(next);
+                      if (next !== 'text') setSideBySide(false);
+                    }}
+                  >
+                    <TabsList className="grid w-full max-w-2xl grid-cols-3">
+                      <TabsTrigger value="text">Paste Text</TabsTrigger>
+                      <TabsTrigger value="file">Upload File</TabsTrigger>
+                      <TabsTrigger value="json">Import JSON</TabsTrigger>
+                    </TabsList>
 
-                  <TabsContent value="text" className="space-y-4">
-                    <div>
-                      <Label htmlFor="question-input">Questions Text</Label>
-                      <Textarea
-                        id="question-input"
-                        placeholder="Paste soal di sini...&#10;&#10;Matematika pakai LaTeX: $\sqrt{25}$, $x^2$, $\frac{1}{2}$&#10;&#10;1. Nilai $\sqrt{48} + 3^2$ adalah ...&#10;a) $6\sqrt{2}$&#10;b) $4\sqrt{3} + 9$&#10;Correct answer: b"
-                        value={inputText}
-                        onChange={(e) => setInputText(e.target.value)}
-                        rows={12}
-                        className="mt-2 font-mono text-sm"
-                      />
-                      {inputText.trim() ? (
-                        <MathPreview
-                          className="mt-2 max-h-48 overflow-y-auto"
-                          value={inputText.slice(0, 2000)}
-                          label="Preview teks (cuplikan)"
+                    <TabsContent value="text" className="space-y-4">
+                      <div>
+                        <Label htmlFor="question-input">Questions Text</Label>
+                        <Textarea
+                          id="question-input"
+                          placeholder="Paste soal di sini...&#10;&#10;Matematika pakai LaTeX: $\sqrt{25}$, $x^2$, $\frac{1}{2}$&#10;&#10;1. Nilai $\sqrt{48} + 3^2$ adalah ...&#10;a) $6\sqrt{2}$&#10;b) $4\sqrt{3} + 9$&#10;Correct answer: b"
+                          value={inputText}
+                          onChange={(e) => setInputText(e.target.value)}
+                          rows={12}
+                          className="mt-2 font-mono text-sm"
                         />
-                      ) : null}
-                    </div>
-
-                    <div className="space-y-3 rounded-lg border border-border bg-muted/30 p-4">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <Label className="flex items-center gap-2 text-base">
-                          <ImageIcon className="h-4 w-4" />
-                          Gambar soal (opsional)
-                        </Label>
-                        <div className="flex flex-wrap gap-2">
-                          <input
-                            type="file"
-                            accept="image/jpeg,image/png,image/webp,image/gif"
-                            multiple
-                            className="hidden"
-                            id="parser-parse-images"
-                            onChange={(e) => {
-                              void addParseImagesFromFiles(e.target.files);
-                              e.target.value = '';
-                            }}
+                        {inputText.trim() ? (
+                          <MathPreview
+                            className="mt-2 max-h-48 overflow-y-auto"
+                            value={inputText.slice(0, 2000)}
+                            label="Preview teks (cuplikan)"
                           />
-                          <Button type="button" variant="outline" size="sm" asChild>
-                            <label htmlFor="parser-parse-images" className="cursor-pointer">
-                              <Upload className="mr-2 h-4 w-4" />
-                              Unggah gambar
-                            </label>
-                          </Button>
-                          {parseImages.length > 0 && (
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => {
-                                setParseImages([]);
-                                setPdfQuestionPageMap([]);
-                              }}
-                            >
-                              Hapus semua gambar
-                            </Button>
-                          )}
-                        </div>
+                        ) : null}
                       </div>
-                      <p className="text-xs text-muted-foreground space-y-1">
-                        <span className="block">
-                          Gambar mengikuti <strong>posisi di teks</strong>: sebelum teks soal = atas; setelah teks / sebelum opsi = bawah;
-                          setelah opsi = bawah (setelah pilihan); di antara soal 1 dan 2 = atas soal 2. Opsi:{' '}
-                          <code className="text-[11px]">a) teks [!https://…]</code> atau{' '}
-                          <code className="text-[11px]">[!option-b https://…]</code>. Eksplisit:{' '}
-                          <code className="text-[11px]">[!above url]</code>, <code className="text-[11px]">[!below url]</code>.
-                        </span>
-                        <span className="block">
-                          JPEG/PNG/WebP/GIF • maks. 8 gambar • ±4&nbsp;MB/gambar. Mode gambar butuh{' '}
-                          <code className="rounded bg-muted px-1 text-[11px]">GEMINI_API_KEY</code>/<code className="rounded bg-muted px-1 text-[11px]">ZAI_API_KEY</code>.
-                        </span>
-                      </p>
-                      {parseImages.length > 0 ? (
-                        <div className="flex flex-wrap gap-2">
-                          {parseImages.map((src, idx) => (
-                            <div
-                              key={`${idx}-${src.slice(0, 48)}`}
-                              className="relative h-20 w-20 overflow-hidden rounded-md border bg-background"
-                            >
-                              {/* eslint-disable-next-line @next/next/no-img-element */}
-                              <img src={src} alt="" className="h-full w-full object-cover" />
-                              <button
+
+                      <div className="space-y-3 rounded-lg border border-border bg-muted/30 p-4">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <Label className="flex items-center gap-2 text-base">
+                            <ImageIcon className="h-4 w-4" />
+                            Gambar soal (opsional)
+                          </Label>
+                          <div className="flex flex-wrap gap-2">
+                            <input
+                              type="file"
+                              accept="image/jpeg,image/png,image/webp,image/gif"
+                              multiple
+                              className="hidden"
+                              id="parser-parse-images"
+                              onChange={(e) => {
+                                void addParseImagesFromFiles(e.target.files);
+                                e.target.value = '';
+                              }}
+                            />
+                            <Button type="button" variant="outline" size="sm" asChild>
+                              <label htmlFor="parser-parse-images" className="cursor-pointer">
+                                <Upload className="mr-2 h-4 w-4" />
+                                Unggah gambar
+                              </label>
+                            </Button>
+                            {parseImages.length > 0 && (
+                              <Button
                                 type="button"
-                                onClick={() => removeParseImageAt(idx)}
-                                className="absolute right-0.5 top-0.5 rounded bg-background/90 p-0.5 shadow hover:bg-destructive hover:text-destructive-foreground"
-                                aria-label="Hapus gambar"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => {
+                                  setParseImages([]);
+                                  setPdfQuestionPageMap([]);
+                                }}
                               >
-                                <X className="h-3.5 w-3.5" />
-                              </button>
-                            </div>
-                          ))}
+                                Hapus semua gambar
+                              </Button>
+                            )}
+                          </div>
                         </div>
-                      ) : null}
-                    </div>
+                        <p className="text-xs text-muted-foreground space-y-1">
+                          <span className="block">
+                            Gambar mengikuti <strong>posisi di teks</strong>: sebelum teks soal = atas; setelah teks / sebelum opsi = bawah;
+                            setelah opsi = bawah (setelah pilihan); di antara soal 1 dan 2 = atas soal 2. Opsi:{' '}
+                            <code className="text-[11px]">a) teks [!https://…]</code> atau{' '}
+                            <code className="text-[11px]">[!option-b https://…]</code>. Eksplisit:{' '}
+                            <code className="text-[11px]">[!above url]</code>, <code className="text-[11px]">[!below url]</code>.
+                          </span>
+                          <span className="block">
+                            JPEG/PNG/WebP/GIF • maks. 8 gambar • ±4&nbsp;MB/gambar. Mode gambar butuh{' '}
+                            <code className="rounded bg-muted px-1 text-[11px]">GEMINI_API_KEY</code>/<code className="rounded bg-muted px-1 text-[11px]">ZAI_API_KEY</code>.
+                          </span>
+                        </p>
+                        {parseImages.length > 0 ? (
+                          <div className="flex flex-wrap gap-2">
+                            {parseImages.map((src, idx) => (
+                              <div
+                                key={`${idx}-${src.slice(0, 48)}`}
+                                className="relative h-20 w-20 overflow-hidden rounded-md border bg-background"
+                              >
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img src={src} alt="" className="h-full w-full object-cover" />
+                                <button
+                                  type="button"
+                                  onClick={() => removeParseImageAt(idx)}
+                                  className="absolute right-0.5 top-0.5 rounded bg-background/90 p-0.5 shadow hover:bg-destructive hover:text-destructive-foreground"
+                                  aria-label="Hapus gambar"
+                                >
+                                  <X className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        ) : null}
+                      </div>
 
-                    <div className="flex flex-wrap gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        type="button"
-                        onClick={() => setInputText(sampleText)}
-                      >
-                        Contoh teks English
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        type="button"
-                        onClick={() => {
-                          setInputText(sampleTextWithImageUrl);
-                          toast.message('Contoh Indo + [!URL gambar] dimuat', {
-                            description:
-                              'Soal 1: atas + bawah teks. Soal 2: atas teks + gambar di opsi b). Lalu Parse.',
-                          });
-                        }}
-                      >
-                        Contoh Indo + [!URL gambar]
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        type="button"
-                        onClick={() => {
-                          setInputText(sampleTextWithImagePlaceholder);
-                          toast.message('Contoh Indo + [!Link Image] dimuat', {
-                            description:
-                              'Unggah 1 foto — penanda sebelum 1. = lampiran soal 1.',
-                          });
-                        }}
-                      >
-                        Contoh + upload gambar
-                      </Button>
-                    </div>
-                  </TabsContent>
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          type="button"
+                          onClick={() => setInputText(sampleText)}
+                        >
+                          Contoh teks English
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          type="button"
+                          onClick={() => {
+                            setInputText(sampleTextWithImageUrl);
+                            toast.message('Contoh Indo + [!URL gambar] dimuat', {
+                              description:
+                                'Soal 1: atas + bawah teks. Soal 2: atas teks + gambar di opsi b). Lalu Parse.',
+                            });
+                          }}
+                        >
+                          Contoh Indo + [!URL gambar]
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          type="button"
+                          onClick={() => {
+                            setInputText(sampleTextWithImagePlaceholder);
+                            toast.message('Contoh Indo + [!Link Image] dimuat', {
+                              description:
+                                'Unggah 1 foto — penanda sebelum 1. = lampiran soal 1.',
+                            });
+                          }}
+                        >
+                          Contoh + upload gambar
+                        </Button>
+                      </div>
+                    </TabsContent>
 
-                  <TabsContent value="file" className="space-y-4">
-                    <Alert className="border-primary/30 bg-primary/5">
-                      <AlertCircle className="h-4 w-4" />
-                      <AlertDescription>
-                        Upload <strong>PDF soal</strong> untuk ekstrak teks + gambar halaman secara otomatis, lalu AI parse.
-                        Tetap bisa tambah gambar manual atau .txt seperti sebelumnya.
-                      </AlertDescription>
-                    </Alert>
-                    <input
-                      type="file"
-                      accept="application/pdf,.pdf"
-                      className="hidden"
-                      id="parser-file-pdf"
-                      onChange={(e) => {
-                        void handlePdfUpload(e.target.files?.[0]);
-                        e.target.value = '';
-                      }}
-                    />
-                    <div className="flex flex-wrap gap-2">
-                      <Button type="button" asChild variant="secondary">
-                        <label htmlFor="parser-file-pdf" className="cursor-pointer">
-                          <FileText className="mr-2 h-4 w-4" />
-                          Pilih PDF soal
-                        </label>
-                      </Button>
-                      {pdfQuestionPageMap.length > 0 && (
-                        <Badge variant="secondary">
-                          {pdfQuestionPageMap.length} pertanyaan terdeteksi (map halaman siap)
-                        </Badge>
-                      )}
-                    </div>
-                    <input
-                      type="file"
-                      accept="image/jpeg,image/png,image/webp,image/gif"
-                      multiple
-                      className="hidden"
-                      id="parser-file-images"
-                      onChange={(e) => {
-                        void addParseImagesFromFiles(e.target.files);
-                        e.target.value = '';
-                      }}
-                    />
-                    <div className="flex flex-wrap gap-2">
-                      <Button type="button" variant="outline" asChild>
-                        <label htmlFor="parser-file-images" className="cursor-pointer">
-                          <ImageIcon className="mr-2 h-4 w-4" />
-                          Tambahkan gambar ke antrian parse
-                        </label>
-                      </Button>
-                      {parseImages.length > 0 && (
-                        <Badge variant="secondary">{parseImages.length} gambar siap diparse</Badge>
-                      )}
-                    </div>
-                    <div className="border-2 border-dashed border-border rounded-lg p-12 text-center hover:border-primary/50 transition-colors">
-                      <Upload className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
-                      <p className="text-lg font-medium mb-2">Upload dokumen teks (.txt) tambahan</p>
-                      <p className="text-sm text-muted-foreground mb-4">
-                        Isi berkas akan dimasukkan ke kolom teks di tab Paste Text secara otomatis.
-                      </p>
+                    <TabsContent value="file" className="space-y-4">
+                      <Alert className="border-primary/30 bg-primary/5">
+                        <AlertCircle className="h-4 w-4" />
+                        <AlertDescription>
+                          Upload <strong>PDF soal</strong> untuk ekstrak teks + gambar halaman secara otomatis, lalu AI parse.
+                          Tetap bisa tambah gambar manual atau .txt seperti sebelumnya.
+                        </AlertDescription>
+                      </Alert>
                       <input
                         type="file"
-                        accept=".txt,text/plain"
+                        accept="application/pdf,.pdf"
                         className="hidden"
-                        id="parser-file"
+                        id="parser-file-pdf"
                         onChange={(e) => {
-                          const f = e.target.files?.[0];
-                          if (!f) return;
-                          setPdfQuestionPageMap([]);
-                          const reader = new FileReader();
-                          reader.onload = () => setInputText(String(reader.result || ''));
-                          reader.readAsText(f);
+                          void handlePdfUpload(e.target.files?.[0]);
+                          e.target.value = '';
                         }}
                       />
-                      <Button type="button" asChild>
-                        <label htmlFor="parser-file" className="cursor-pointer">
-                          <Upload className="w-4 h-4 mr-2" />
-                          Choose .txt file
-                        </label>
-                      </Button>
-                    </div>
-                  </TabsContent>
-
-                  <TabsContent value="json" className="space-y-4">
-                    <Alert className="border-border bg-muted/40">
-                      <AlertCircle className="h-4 w-4" />
-                      <AlertDescription>
-                        Kirim array soal (field sama dengan API{' '}
-                        <code className="text-xs rounded px-1 bg-muted">POST /questions/import</code>
-                        ):{' '}
-                        <code className="text-xs rounded px-1 bg-muted">type</code>,{' '}
-                        <code className="text-xs rounded px-1 bg-muted">title</code>,{' '}
-                        <code className="text-xs rounded px-1 bg-muted">content</code>,{' '}
-                        <code className="text-xs rounded px-1 bg-muted">correct_answer</code>, dll.
-                      </AlertDescription>
-                    </Alert>
-                    <div>
-                      <Label htmlFor="json-import">JSON array atau {'{ "questions": [...] }'}</Label>
-                      <Textarea
-                        id="json-import"
-                        placeholder={`[\n  {\n    "type": "multiple-choice",\n    "title": "...",\n    "content": "...",\n    "correct_answer": "...",\n    "difficulty": "medium",\n    "points": 5\n  }\n]`}
-                        value={jsonImportText}
-                        onChange={(e) => setJsonImportText(e.target.value)}
-                        rows={14}
-                        className="mt-2 font-mono text-sm"
-                      />
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      <Button variant="outline" size="sm" type="button" onClick={() => setJsonImportText(sampleJsonImport)}>
-                        Load sample JSON
-                      </Button>
-                      <Button type="button" onClick={handleJsonImportToBank} disabled={isJsonImporting || !jsonImportText.trim()} className="gap-2">
-                        {isJsonImporting ? (
-                          <>
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                            Importing…
-                          </>
-                        ) : (
-                          <>
-                            <Save className="w-4 h-4" />
-                            Import ke bank soal
-                          </>
+                      <div className="flex flex-wrap gap-2">
+                        <Button type="button" asChild variant="secondary">
+                          <label htmlFor="parser-file-pdf" className="cursor-pointer">
+                            <FileText className="mr-2 h-4 w-4" />
+                            Pilih PDF soal
+                          </label>
+                        </Button>
+                        {pdfQuestionPageMap.length > 0 && (
+                          <Badge variant="secondary">
+                            {pdfQuestionPageMap.length} pertanyaan terdeteksi (map halaman siap)
+                          </Badge>
                         )}
-                      </Button>
-                    </div>
-                  </TabsContent>
-                </Tabs>
-
-                <div className="flex items-center justify-between pt-4 border-t">
-                  <div className="text-sm text-muted-foreground">
-                    {inputMethod !== 'json' && (inputText.length > 0 || parseImages.length > 0) && (
-                      <span>
-                        {inputText.length > 0 && (
-                          <>
-                            {inputText.length} karakter • ~{Math.ceil(inputText.split('\n').filter(Boolean).length / 5)}{' '}
-                            baris bermakna
-                          </>
-                        )}
-                        {inputText.length > 0 && parseImages.length > 0 ? ' · ' : ''}
-                        {parseImages.length > 0 && <>{parseImages.length} gambar lampiran</>}
-                      </span>
-                    )}
-                    {inputMethod === 'json' && jsonImportText.length > 0 && (
-                      <span>{jsonImportText.length} characters JSON</span>
-                    )}
-                  </div>
-                  <Button
-                    onClick={handleParse}
-                    disabled={
-                      inputMethod === 'json' ||
-                      (!inputText.trim() && parseImages.length === 0) ||
-                      isParsing
-                    }
-                    className="gap-2"
-                  >
-                    {isParsing ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        Parsing...
-                      </>
-                    ) : (
-                      <>
-                        <Sparkles className="w-4 h-4" />
-                        Parse Questions
-                      </>
-                    )}
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Parsing Progress */}
-            {isParsing && (
-              <Card>
-                <CardContent className="p-6">
-                  <div className="space-y-4">
-                    <div className="flex items-center gap-3">
-                      <Loader2 className="w-5 h-5 animate-spin text-primary" />
-                      <div>
-                        <p className="font-medium">AI is analyzing your questions...</p>
-                        <p className="text-sm text-muted-foreground">This usually takes a few seconds</p>
                       </div>
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp,image/gif"
+                        multiple
+                        className="hidden"
+                        id="parser-file-images"
+                        onChange={(e) => {
+                          void addParseImagesFromFiles(e.target.files);
+                          e.target.value = '';
+                        }}
+                      />
+                      <div className="flex flex-wrap gap-2">
+                        <Button type="button" variant="outline" asChild>
+                          <label htmlFor="parser-file-images" className="cursor-pointer">
+                            <ImageIcon className="mr-2 h-4 w-4" />
+                            Tambahkan gambar ke antrian parse
+                          </label>
+                        </Button>
+                        {parseImages.length > 0 && (
+                          <Badge variant="secondary">{parseImages.length} gambar siap diparse</Badge>
+                        )}
+                      </div>
+                      <div className="border-2 border-dashed border-border rounded-lg p-12 text-center hover:border-primary/50 transition-colors">
+                        <Upload className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
+                        <p className="text-lg font-medium mb-2">Upload dokumen teks (.txt) tambahan</p>
+                        <p className="text-sm text-muted-foreground mb-4">
+                          Isi berkas akan dimasukkan ke kolom teks di tab Paste Text secara otomatis.
+                        </p>
+                        <input
+                          type="file"
+                          accept=".txt,text/plain"
+                          className="hidden"
+                          id="parser-file"
+                          onChange={(e) => {
+                            const f = e.target.files?.[0];
+                            if (!f) return;
+                            setPdfQuestionPageMap([]);
+                            const reader = new FileReader();
+                            reader.onload = () => setInputText(String(reader.result || ''));
+                            reader.readAsText(f);
+                          }}
+                        />
+                        <Button type="button" asChild>
+                          <label htmlFor="parser-file" className="cursor-pointer">
+                            <Upload className="w-4 h-4 mr-2" />
+                            Choose .txt file
+                          </label>
+                        </Button>
+                      </div>
+                    </TabsContent>
+
+                    <TabsContent value="json" className="space-y-4">
+                      <Alert className="border-border bg-muted/40">
+                        <AlertCircle className="h-4 w-4" />
+                        <AlertDescription>
+                          Kirim array soal (field sama dengan API{' '}
+                          <code className="text-xs rounded px-1 bg-muted">POST /questions/import</code>
+                          ):{' '}
+                          <code className="text-xs rounded px-1 bg-muted">type</code>,{' '}
+                          <code className="text-xs rounded px-1 bg-muted">title</code>,{' '}
+                          <code className="text-xs rounded px-1 bg-muted">content</code>,{' '}
+                          <code className="text-xs rounded px-1 bg-muted">correct_answer</code>, dll.
+                        </AlertDescription>
+                      </Alert>
+                      <div>
+                        <Label htmlFor="json-import">JSON array atau {'{ "questions": [...] }'}</Label>
+                        <Textarea
+                          id="json-import"
+                          placeholder={`[\n  {\n    "type": "multiple-choice",\n    "title": "...",\n    "content": "...",\n    "correct_answer": "...",\n    "difficulty": "medium",\n    "points": 5\n  }\n]`}
+                          value={jsonImportText}
+                          onChange={(e) => setJsonImportText(e.target.value)}
+                          rows={14}
+                          className="mt-2 font-mono text-sm"
+                        />
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <Button variant="outline" size="sm" type="button" onClick={() => setJsonImportText(sampleJsonImport)}>
+                          Load sample JSON
+                        </Button>
+                        <Button type="button" onClick={handleJsonImportToBank} disabled={isJsonImporting || !jsonImportText.trim()} className="gap-2">
+                          {isJsonImporting ? (
+                            <>
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                              Importing…
+                            </>
+                          ) : (
+                            <>
+                              <Save className="w-4 h-4" />
+                              Import ke bank soal
+                            </>
+                          )}
+                        </Button>
+                      </div>
+                    </TabsContent>
+                  </Tabs>
+
+                  <div className="flex items-center justify-between pt-4 border-t">
+                    <div className="text-sm text-muted-foreground">
+                      {inputMethod !== 'json' && (inputText.length > 0 || parseImages.length > 0) && (
+                        <span>
+                          {inputText.length > 0 && (
+                            <>
+                              {inputText.length} karakter • ~{Math.ceil(inputText.split('\n').filter(Boolean).length / 5)}{' '}
+                              baris bermakna
+                            </>
+                          )}
+                          {inputText.length > 0 && parseImages.length > 0 ? ' · ' : ''}
+                          {parseImages.length > 0 && <>{parseImages.length} gambar lampiran</>}
+                        </span>
+                      )}
+                      {inputMethod === 'json' && jsonImportText.length > 0 && (
+                        <span>{jsonImportText.length} characters JSON</span>
+                      )}
                     </div>
-                    <Progress value={66} className="h-2" />
+                    <Button
+                      onClick={handleParse}
+                      disabled={
+                        inputMethod === 'json' ||
+                        (!inputText.trim() && parseImages.length === 0) ||
+                        isParsing
+                      }
+                      className="gap-2"
+                    >
+                      {isParsing ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          Parsing...
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles className="w-4 h-4" />
+                          Parse Questions
+                        </>
+                      )}
+                    </Button>
                   </div>
                 </CardContent>
               </Card>
-            )}
 
-            {/* Parsed Results — state lokal: edit / hapus / tambah / urut */}
-            {parseResult && !isParsing && (
-              <Card>
-                <CardHeader>
-                  <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                    <div>
-                      <CardTitle className="flex items-center gap-2">
-                        <CheckCircle2 className="w-5 h-5 text-green-500" />
-                        Parsed Questions
-                      </CardTitle>
-                      <CardDescription>
-                        {workingQuestions.length} soal dalam daftar kerja — centang yang akan disimpan, edit lalu simpan ke
-                        bank. Gambar/unggahan disimpan sebagai URL HTTPS; murid melihatnya di halaman ujian jika Cloudinary aktif.
-                      </CardDescription>
+              {/* Parsing Progress */}
+              {isParsing && (
+                <Card className={cn(sideBySide && inputMethod === 'text' ? 'lg:col-start-1 lg:row-start-2' : '')}>
+                  <CardContent className="p-6">
+                    <div className="space-y-4">
+                      <div className="flex items-center gap-3">
+                        <Loader2 className="w-5 h-5 animate-spin text-primary" />
+                        <div>
+                          <p className="font-medium">AI is analyzing your questions...</p>
+                          <p className="text-sm text-muted-foreground">This usually takes a few seconds</p>
+                        </div>
+                      </div>
+                      <Progress value={66} className="h-2" />
                     </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Button type="button" variant="outline" size="sm" onClick={addQuestion} className="gap-1">
-                        <Plus className="w-4 h-4" />
-                        Tambah soal
-                      </Button>
-                      <Button type="button" variant="outline" size="sm" onClick={selectAllParsed}>
-                        Pilih semua
-                      </Button>
-                      <Button type="button" variant="ghost" size="sm" onClick={clearSelection}>
-                        Kosongkan pilihan
-                      </Button>
-                      <Button
-                        onClick={handleSaveAll}
-                        disabled={isSaving || workingQuestions.length === 0}
-                        className="gap-2"
-                      >
-                        {isSaving ? (
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                        ) : (
-                          <Save className="w-4 h-4" />
-                        )}
-                        Simpan ke bank
-                      </Button>
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  {workingQuestions.length === 0 && (
-                    <Alert>
-                      <AlertCircle className="h-4 w-4" />
-                      <AlertDescription className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                        <span>Belum ada soal di daftar. Parse ulang atau tambah soal secara manual.</span>
-                        <Button type="button" size="sm" variant="secondary" onClick={addQuestion} className="shrink-0 gap-1">
+                  </CardContent>
+                </Card>
+              )}
+
+              {sideBySide && inputMethod === 'text' && !isParsing && !parseResult && (
+                <Card className="lg:col-start-2 lg:row-start-1 lg:row-span-2">
+                  <CardHeader>
+                    <CardTitle>Hasil parsing</CardTitle>
+                    <CardDescription>
+                      Belum ada hasil. Tempel teks, lalu klik Parse atau tekan Ctrl/⌘+S.
+                    </CardDescription>
+                  </CardHeader>
+                </Card>
+              )}
+
+              {/* Parsed Results — state lokal: edit / hapus / tambah / urut */}
+              {parseResult && !isParsing && (
+                <Card
+                  className={cn(
+                    sideBySide && inputMethod === 'text'
+                      ? 'lg:col-start-2 lg:row-start-1 lg:row-span-2'
+                      : ''
+                  )}
+                >
+                  <CardHeader>
+                    <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <CardTitle className="flex items-center gap-2">
+                          <CheckCircle2 className="w-5 h-5 text-green-500" />
+                          Parsed Questions
+                        </CardTitle>
+                        <CardDescription>
+                          {workingQuestions.length} soal dalam daftar kerja — centang yang akan disimpan, edit lalu simpan ke
+                          bank. Gambar/unggahan disimpan sebagai URL HTTPS; murid melihatnya di halaman ujian jika Cloudinary aktif.
+                        </CardDescription>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Button type="button" variant="outline" size="sm" onClick={addQuestion} className="gap-1">
                           <Plus className="w-4 h-4" />
                           Tambah soal
                         </Button>
-                      </AlertDescription>
-                    </Alert>
-                  )}
-                  {parseResult.warnings && parseResult.warnings.length > 0 && (
-                    <Alert>
-                      <AlertCircle className="h-4 w-4" />
-                      <AlertDescription>
-                        <div className="space-y-1">
-                          <p className="font-medium">Warnings:</p>
-                          <ul className="list-disc list-inside text-sm">
-                            {parseResult.warnings.map((warning, i) => (
-                              <li key={i}>{warning}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      </AlertDescription>
-                    </Alert>
-                  )}
-
-                  <div className="space-y-4">
-                    {workingQuestions.map((q, index) => {
-                      const correctStr = Array.isArray(q.correctAnswer)
-                        ? q.correctAnswer.join('; ')
-                        : String(q.correctAnswer ?? '');
-                      const isSelected = selectedIds.has(q.id) || selectedIds.size === 0;
-                      const isEditing = editingId === q.id;
-
-                      return (
-                        <Card
-                          key={q.id}
-                          className={cn('transition-all', isSelected && 'ring-2 ring-primary/60')}
+                        <Button type="button" variant="outline" size="sm" onClick={selectAllParsed}>
+                          Pilih semua
+                        </Button>
+                        <Button type="button" variant="ghost" size="sm" onClick={clearSelection}>
+                          Kosongkan pilihan
+                        </Button>
+                        <Button
+                          onClick={handleSaveAll}
+                          disabled={isSaving || workingQuestions.length === 0}
+                          className="gap-2"
                         >
-                          <CardContent className="p-4">
-                            <div className="flex items-start gap-3">
-                              <input
-                                type="checkbox"
-                                checked={isSelected}
-                                onChange={() => toggleQuestionSelection(q.id)}
-                                className="mt-1.5 shrink-0"
-                                aria-label={`Pilih soal ${index + 1}`}
-                              />
+                          {isSaving ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <Save className="w-4 h-4" />
+                          )}
+                          Simpan ke bank
+                        </Button>
+                      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    {workingQuestions.length === 0 && (
+                      <Alert>
+                        <AlertCircle className="h-4 w-4" />
+                        <AlertDescription className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                          <span>Belum ada soal di daftar. Parse ulang atau tambah soal secara manual.</span>
+                          <Button type="button" size="sm" variant="secondary" onClick={addQuestion} className="shrink-0 gap-1">
+                            <Plus className="w-4 h-4" />
+                            Tambah soal
+                          </Button>
+                        </AlertDescription>
+                      </Alert>
+                    )}
+                    {parseResult.warnings && parseResult.warnings.length > 0 && (
+                      <Alert>
+                        <AlertCircle className="h-4 w-4" />
+                        <AlertDescription>
+                          <div className="space-y-1">
+                            <p className="font-medium">Warnings:</p>
+                            <ul className="list-disc list-inside text-sm">
+                              {parseResult.warnings.map((warning, i) => (
+                                <li key={i}>{warning}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        </AlertDescription>
+                      </Alert>
+                    )}
 
-                              <div className="min-w-0 flex-1 space-y-3">
-                                <div className="flex flex-wrap items-start justify-between gap-2">
-                                  <div className="flex flex-wrap items-center gap-2">
-                                    <Badge variant="outline">Q{index + 1}</Badge>
-                                    {getTypeBadge(q.type)}
-                                    <Badge variant="outline" className="capitalize">
-                                      {q.difficulty}
-                                    </Badge>
-                                    <Badge variant="outline">{q.points} pts</Badge>
-                                  </div>
-                                  <div className="flex flex-wrap items-center gap-1">
-                                    <Button
-                                      type="button"
-                                      variant="ghost"
-                                      size="icon"
-                                      className="h-8 w-8"
-                                      onClick={() => moveQuestion(q.id, -1)}
-                                      disabled={index === 0}
-                                      title="Naik"
-                                    >
-                                      <ChevronUp className="h-4 w-4" />
-                                    </Button>
-                                    <Button
-                                      type="button"
-                                      variant="ghost"
-                                      size="icon"
-                                      className="h-8 w-8"
-                                      onClick={() => moveQuestion(q.id, 1)}
-                                      disabled={index === workingQuestions.length - 1}
-                                      title="Turun"
-                                    >
-                                      <ChevronDown className="h-4 w-4" />
-                                    </Button>
-                                    <Button
-                                      type="button"
-                                      variant="ghost"
-                                      size="icon"
-                                      className="h-8 w-8"
-                                      onClick={() => duplicateQuestion(q.id)}
-                                      title="Duplikat"
-                                    >
-                                      <Copy className="h-4 w-4" />
-                                    </Button>
-                                    <Button
-                                      type="button"
-                                      variant="ghost"
-                                      size="icon"
-                                      className="h-8 w-8"
-                                      onClick={() => setEditingId(isEditing ? null : q.id)}
-                                      title={isEditing ? 'Tutup editor' : 'Edit'}
-                                    >
-                                      <Edit className="h-4 w-4" />
-                                    </Button>
-                                    <Button
-                                      type="button"
-                                      variant="ghost"
-                                      size="icon"
-                                      className="h-8 w-8 text-destructive hover:text-destructive"
-                                      onClick={() => removeQuestion(q.id)}
-                                      title="Hapus dari daftar"
-                                    >
-                                      <Trash2 className="h-4 w-4" />
-                                    </Button>
-                                  </div>
-                                </div>
+                    <div className="space-y-4">
+                      {workingQuestions.map((q, index) => {
+                        const correctStr = Array.isArray(q.correctAnswer)
+                          ? q.correctAnswer.join('; ')
+                          : String(q.correctAnswer ?? '');
+                        const isSelected = selectedIds.has(q.id) || selectedIds.size === 0;
+                        const isEditing = editingId === q.id;
 
-                                {isEditing ? (
-                                  <div className="space-y-3 rounded-lg border border-border bg-muted/20 p-3">
-                                    <div className="grid gap-3 sm:grid-cols-2">
-                                      <div>
-                                        <Label>Tipe</Label>
-                                        <Select
-                                          value={q.type}
-                                          onValueChange={(v) => {
-                                            const t = v as QuestionType;
-                                            const patch: Partial<ParsedQuestion> = { type: t };
-                                            if (t === 'multiple-choice' && (!q.options || q.options.length < 2)) {
-                                              patch.options = ['Opsi A', 'Opsi B'];
+                        return (
+                          <Card
+                            key={q.id}
+                            className={cn('transition-all', isSelected && 'ring-2 ring-primary/60')}
+                          >
+                            <CardContent className="p-4">
+                              <div className="flex items-start gap-3">
+                                <input
+                                  type="checkbox"
+                                  checked={isSelected}
+                                  onChange={() => toggleQuestionSelection(q.id)}
+                                  className="mt-1.5 shrink-0"
+                                  aria-label={`Pilih soal ${index + 1}`}
+                                />
+
+                                <div className="min-w-0 flex-1 space-y-3">
+                                  <div className="flex flex-wrap items-start justify-between gap-2">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <Badge variant="outline">Q{index + 1}</Badge>
+                                      {getTypeBadge(q.type)}
+                                      <Badge variant="outline" className="capitalize">
+                                        {q.difficulty}
+                                      </Badge>
+                                      <Badge variant="outline">{q.points} pts</Badge>
+                                    </div>
+                                    <div className="flex flex-wrap items-center gap-1">
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-8 w-8"
+                                        onClick={() => moveQuestion(q.id, -1)}
+                                        disabled={index === 0}
+                                        title="Naik"
+                                      >
+                                        <ChevronUp className="h-4 w-4" />
+                                      </Button>
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-8 w-8"
+                                        onClick={() => moveQuestion(q.id, 1)}
+                                        disabled={index === workingQuestions.length - 1}
+                                        title="Turun"
+                                      >
+                                        <ChevronDown className="h-4 w-4" />
+                                      </Button>
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-8 w-8"
+                                        onClick={() => duplicateQuestion(q.id)}
+                                        title="Duplikat"
+                                      >
+                                        <Copy className="h-4 w-4" />
+                                      </Button>
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-8 w-8"
+                                        onClick={() => setEditingId(isEditing ? null : q.id)}
+                                        title={isEditing ? 'Tutup editor' : 'Edit'}
+                                      >
+                                        <Edit className="h-4 w-4" />
+                                      </Button>
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-8 w-8 text-destructive hover:text-destructive"
+                                        onClick={() => removeQuestion(q.id)}
+                                        title="Hapus dari daftar"
+                                      >
+                                        <Trash2 className="h-4 w-4" />
+                                      </Button>
+                                    </div>
+                                  </div>
+
+                                  {isEditing ? (
+                                    <div className="space-y-3 rounded-lg border border-border bg-muted/20 p-3">
+                                      <div className="grid gap-3 sm:grid-cols-2">
+                                        <div>
+                                          <Label>Tipe</Label>
+                                          <Select
+                                            value={q.type}
+                                            onValueChange={(v) => {
+                                              const t = v as QuestionType;
+                                              const patch: Partial<ParsedQuestion> = { type: t };
+                                              if (t === 'multiple-choice' && (!q.options || q.options.length < 2)) {
+                                                patch.options = ['Opsi A', 'Opsi B'];
+                                              }
+                                              if (t !== 'multiple-choice') {
+                                                patch.options = undefined;
+                                              }
+                                              updateQuestion(q.id, patch);
+                                            }}
+                                          >
+                                            <SelectTrigger className="mt-1">
+                                              <SelectValue />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                              {questionTypes.map((t) => (
+                                                <SelectItem key={t.value} value={t.value}>
+                                                  {t.label}
+                                                </SelectItem>
+                                              ))}
+                                            </SelectContent>
+                                          </Select>
+                                        </div>
+                                        <div>
+                                          <Label>Poin</Label>
+                                          <Input
+                                            type="number"
+                                            min={1}
+                                            className="mt-1"
+                                            value={q.points}
+                                            onChange={(e) =>
+                                              updateQuestion(q.id, {
+                                                points: Number(e.target.value) || 5,
+                                              })
                                             }
-                                            if (t !== 'multiple-choice') {
-                                              patch.options = undefined;
-                                            }
-                                            updateQuestion(q.id, patch);
-                                          }}
-                                        >
-                                          <SelectTrigger className="mt-1">
-                                            <SelectValue />
-                                          </SelectTrigger>
-                                          <SelectContent>
-                                            {questionTypes.map((t) => (
-                                              <SelectItem key={t.value} value={t.value}>
-                                                {t.label}
-                                              </SelectItem>
-                                            ))}
-                                          </SelectContent>
-                                        </Select>
+                                          />
+                                        </div>
                                       </div>
                                       <div>
-                                        <Label>Poin</Label>
+                                        <Label>Judul</Label>
                                         <Input
-                                          type="number"
-                                          min={1}
                                           className="mt-1"
-                                          value={q.points}
+                                          value={q.title}
+                                          onChange={(e) => updateQuestion(q.id, { title: e.target.value })}
+                                        />
+                                      </div>
+                                      <div>
+                                        <Label>Pertanyaan</Label>
+                                        <Textarea
+                                          className="mt-1 font-mono text-sm"
+                                          rows={3}
+                                          value={q.content}
+                                          onChange={(e) => updateQuestion(q.id, { content: e.target.value })}
+                                        />
+                                        <MathPreview
+                                          className="mt-2"
+                                          value={q.content}
+                                          label="Preview pertanyaan"
+                                        />
+                                      </div>
+                                      {q.type === 'multiple-choice' && (
+                                        <div>
+                                          <Label>Opsi (satu baris per opsi)</Label>
+                                          <Textarea
+                                            className="mt-1 font-mono text-sm"
+                                            rows={4}
+                                            value={(q.options ?? []).join('\n')}
+                                            onChange={(e) => {
+                                              const opts = e.target.value
+                                                .split('\n')
+                                                .map((s) => s.trim())
+                                                .filter(Boolean);
+                                              updateQuestion(q.id, { options: opts.length ? opts : ['', ''] });
+                                            }}
+                                          />
+                                          {(q.options ?? []).filter(Boolean).map((opt, oi) => (
+                                            <MathPreview
+                                              key={oi}
+                                              className="mt-2"
+                                              value={opt}
+                                              label={`Opsi ${String.fromCharCode(97 + oi)}`}
+                                            />
+                                          ))}
+                                        </div>
+                                      )}
+                                      <div className="grid gap-3 sm:grid-cols-2">
+                                        <div>
+                                          <Label>Jawaban benar</Label>
+                                          <Input
+                                            className="mt-1"
+                                            placeholder={q.type === 'true-false' ? 'true / false' : 'Teks atau huruf opsi'}
+                                            value={correctStr}
+                                            onChange={(e) =>
+                                              updateQuestion(q.id, { correctAnswer: e.target.value })
+                                            }
+                                          />
+                                        </div>
+                                        <div>
+                                          <Label>Difficulty</Label>
+                                          <Select
+                                            value={q.difficulty}
+                                            onValueChange={(v) =>
+                                              updateQuestion(q.id, { difficulty: v as DifficultyLevel })
+                                            }
+                                          >
+                                            <SelectTrigger className="mt-1">
+                                              <SelectValue />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                              {difficulties.map((d) => (
+                                                <SelectItem key={d} value={d}>
+                                                  {d}
+                                                </SelectItem>
+                                              ))}
+                                            </SelectContent>
+                                          </Select>
+                                        </div>
+                                      </div>
+                                      <div>
+                                        <Label>Penjelasan (opsional)</Label>
+                                        <Textarea
+                                          className="mt-1 font-mono text-sm"
+                                          rows={2}
+                                          value={q.explanation ?? ''}
                                           onChange={(e) =>
                                             updateQuestion(q.id, {
-                                              points: Number(e.target.value) || 5,
+                                              explanation: e.target.value || undefined,
                                             })
                                           }
                                         />
+                                        {q.explanation ? (
+                                          <MathPreview
+                                            className="mt-2"
+                                            value={q.explanation}
+                                            label="Preview penjelasan"
+                                          />
+                                        ) : null}
                                       </div>
-                                    </div>
-                                    <div>
-                                      <Label>Judul</Label>
-                                      <Input
-                                        className="mt-1"
-                                        value={q.title}
-                                        onChange={(e) => updateQuestion(q.id, { title: e.target.value })}
-                                      />
-                                    </div>
-                                    <div>
-                                      <Label>Pertanyaan</Label>
-                                      <Textarea
-                                        className="mt-1 font-mono text-sm"
-                                        rows={3}
-                                        value={q.content}
-                                        onChange={(e) => updateQuestion(q.id, { content: e.target.value })}
-                                      />
-                                      <MathPreview
-                                        className="mt-2"
-                                        value={q.content}
-                                        label="Preview pertanyaan"
-                                      />
-                                    </div>
-                                    {q.type === 'multiple-choice' && (
                                       <div>
-                                        <Label>Opsi (satu baris per opsi)</Label>
-                                        <Textarea
-                                          className="mt-1 font-mono text-sm"
-                                          rows={4}
-                                          value={(q.options ?? []).join('\n')}
+                                        <Label>Tags (koma)</Label>
+                                        <Input
+                                          className="mt-1"
+                                          value={(q.tags ?? []).join(', ')}
                                           onChange={(e) => {
-                                            const opts = e.target.value
+                                            const tags = e.target.value
+                                              .split(',')
+                                              .map((s) => s.trim())
+                                              .filter(Boolean);
+                                            updateQuestion(q.id, { tags });
+                                          }}
+                                        />
+                                      </div>
+                                      <div>
+                                        <Label>Gambar (URL HTTPS, satu per baris)</Label>
+                                        <Textarea
+                                          className="mt-1 font-mono text-xs"
+                                          rows={2}
+                                          placeholder="https://..."
+                                          value={(q.imageUrls ?? []).join('\n')}
+                                          onChange={(e) => {
+                                            const imageUrls = e.target.value
                                               .split('\n')
                                               .map((s) => s.trim())
                                               .filter(Boolean);
-                                            updateQuestion(q.id, { options: opts.length ? opts : ['', ''] });
+                                            updateQuestion(q.id, {
+                                              imageUrls: imageUrls.length ? imageUrls : undefined,
+                                            });
                                           }}
                                         />
-                                        {(q.options ?? []).filter(Boolean).map((opt, oi) => (
-                                          <MathPreview
-                                            key={oi}
-                                            className="mt-2"
-                                            value={opt}
-                                            label={`Opsi ${String.fromCharCode(97 + oi)}`}
-                                          />
-                                        ))}
-                                      </div>
-                                    )}
-                                    <div className="grid gap-3 sm:grid-cols-2">
-                                      <div>
-                                        <Label>Jawaban benar</Label>
-                                        <Input
-                                          className="mt-1"
-                                          placeholder={q.type === 'true-false' ? 'true / false' : 'Teks atau huruf opsi'}
-                                          value={correctStr}
-                                          onChange={(e) =>
-                                            updateQuestion(q.id, { correctAnswer: e.target.value })
-                                          }
-                                        />
-                                      </div>
-                                      <div>
-                                        <Label>Difficulty</Label>
-                                        <Select
-                                          value={q.difficulty}
-                                          onValueChange={(v) =>
-                                            updateQuestion(q.id, { difficulty: v as DifficultyLevel })
-                                          }
-                                        >
-                                          <SelectTrigger className="mt-1">
-                                            <SelectValue />
-                                          </SelectTrigger>
-                                          <SelectContent>
-                                            {difficulties.map((d) => (
-                                              <SelectItem key={d} value={d}>
-                                                {d}
-                                              </SelectItem>
-                                            ))}
-                                          </SelectContent>
-                                        </Select>
-                                      </div>
-                                    </div>
-                                    <div>
-                                      <Label>Penjelasan (opsional)</Label>
-                                      <Textarea
-                                        className="mt-1 font-mono text-sm"
-                                        rows={2}
-                                        value={q.explanation ?? ''}
-                                        onChange={(e) =>
-                                          updateQuestion(q.id, {
-                                            explanation: e.target.value || undefined,
-                                          })
-                                        }
-                                      />
-                                      {q.explanation ? (
-                                        <MathPreview
-                                          className="mt-2"
-                                          value={q.explanation}
-                                          label="Preview penjelasan"
-                                        />
-                                      ) : null}
-                                    </div>
-                                    <div>
-                                      <Label>Tags (koma)</Label>
-                                      <Input
-                                        className="mt-1"
-                                        value={(q.tags ?? []).join(', ')}
-                                        onChange={(e) => {
-                                          const tags = e.target.value
-                                            .split(',')
-                                            .map((s) => s.trim())
-                                            .filter(Boolean);
-                                          updateQuestion(q.id, { tags });
-                                        }}
-                                      />
-                                    </div>
-                                    <div>
-                                      <Label>Gambar (URL HTTPS, satu per baris)</Label>
-                                      <Textarea
-                                        className="mt-1 font-mono text-xs"
-                                        rows={2}
-                                        placeholder="https://..."
-                                        value={(q.imageUrls ?? []).join('\n')}
-                                        onChange={(e) => {
-                                          const imageUrls = e.target.value
-                                            .split('\n')
-                                            .map((s) => s.trim())
-                                            .filter(Boolean);
-                                          updateQuestion(q.id, {
-                                            imageUrls: imageUrls.length ? imageUrls : undefined,
-                                          });
-                                        }}
-                                      />
-                                      <p className="mt-1 text-xs text-muted-foreground">
-                                        URL ini yang ditampilkan ke murid saat mengerjakan soal.
-                                      </p>
-                                    </div>
-                                    <Button
-                                      type="button"
-                                      variant="secondary"
-                                      size="sm"
-                                      onClick={() => setEditingId(null)}
-                                    >
-                                      Selesai mengedit
-                                    </Button>
-                                  </div>
-                                ) : (
-                                  <>
-                                    <QuestionStemWithImages
-                                      title={q.title}
-                                      content={q.content}
-                                      images={q.images}
-                                      imageUrls={q.imageUrls}
-                                      titleClassName="font-semibold"
-                                      contentClassName="text-sm text-muted-foreground whitespace-pre-wrap"
-                                    />
-
-                                    {q.options && q.options.length > 0 && (
-                                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                                        {q.options.map((option, i) => {
-                                          const isCorrect =
-                                            option === correctStr ||
-                                            (Array.isArray(q.correctAnswer) &&
-                                              q.correctAnswer.some((a) => a === option));
-                                          return (
-                                            <div
-                                              key={i}
-                                              className={cn(
-                                                'flex flex-col gap-2 rounded-lg border p-2 text-sm',
-                                                isCorrect
-                                                  ? 'border-green-500/50 bg-green-500/10 text-green-700 dark:text-green-400'
-                                                  : 'bg-muted/50'
-                                              )}
-                                            >
-                                              <div className="flex items-center gap-2">
-                                                <span className="font-medium">{String.fromCharCode(97 + i)})</span>
-                                                <MathText className="min-w-0 flex-1">
-                                                  {stripMediaMarkersFromText(option)}
-                                                </MathText>
-                                                {isCorrect && <CheckCircle2 className="h-4 w-4 shrink-0" />}
-                                              </div>
-                                              <OptionImageDisplay images={q.images} optionIndex={i} />
-                                            </div>
-                                          );
-                                        })}
-                                      </div>
-                                    )}
-
-                                    {q.explanation && (
-                                      <div className="rounded-lg bg-blue-500/10 p-3">
-                                        <p className="text-sm">
-                                          <span className="font-medium">Penjelasan: </span>
-                                          <MathText as="span">{q.explanation}</MathText>
+                                        <p className="mt-1 text-xs text-muted-foreground">
+                                          URL ini yang ditampilkan ke murid saat mengerjakan soal.
                                         </p>
                                       </div>
-                                    )}
+                                      <Button
+                                        type="button"
+                                        variant="secondary"
+                                        size="sm"
+                                        onClick={() => setEditingId(null)}
+                                      >
+                                        Selesai mengedit
+                                      </Button>
+                                    </div>
+                                  ) : (
+                                    <>
+                                      <QuestionStemWithImages
+                                        title={q.title}
+                                        content={q.content}
+                                        images={q.images}
+                                        imageUrls={q.imageUrls}
+                                        titleClassName="font-semibold"
+                                        contentClassName="text-sm text-muted-foreground whitespace-pre-wrap"
+                                      />
 
-                                    {(q.tags ?? []).length > 0 && (
-                                      <div className="flex flex-wrap gap-2">
-                                        {(q.tags ?? []).map((tag) => (
-                                          <Badge key={tag} variant="secondary" className="text-xs">
-                                            {tag}
-                                          </Badge>
-                                        ))}
-                                      </div>
-                                    )}
-                                  </>
-                                )}
+                                      {q.options && q.options.length > 0 && (
+                                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                                          {q.options.map((option, i) => {
+                                            const isCorrect =
+                                              option === correctStr ||
+                                              (Array.isArray(q.correctAnswer) &&
+                                                q.correctAnswer.some((a) => a === option));
+                                            return (
+                                              <div
+                                                key={i}
+                                                className={cn(
+                                                  'flex flex-col gap-2 rounded-lg border p-2 text-sm',
+                                                  isCorrect
+                                                    ? 'border-green-500/50 bg-green-500/10 text-green-700 dark:text-green-400'
+                                                    : 'bg-muted/50'
+                                                )}
+                                              >
+                                                <div className="flex items-center gap-2">
+                                                  <span className="font-medium">{String.fromCharCode(97 + i)})</span>
+                                                  <MathText className="min-w-0 flex-1">
+                                                    {stripMediaMarkersFromText(option)}
+                                                  </MathText>
+                                                  {isCorrect && <CheckCircle2 className="h-4 w-4 shrink-0" />}
+                                                </div>
+                                                <OptionImageDisplay images={q.images} optionIndex={i} />
+                                              </div>
+                                            );
+                                          })}
+                                        </div>
+                                      )}
+
+                                      {q.explanation && (
+                                        <div className="rounded-lg bg-blue-500/10 p-3">
+                                          <p className="text-sm">
+                                            <span className="font-medium">Penjelasan: </span>
+                                            <MathText as="span">{q.explanation}</MathText>
+                                          </p>
+                                        </div>
+                                      )}
+
+                                      {(q.tags ?? []).length > 0 && (
+                                        <div className="flex flex-wrap gap-2">
+                                          {(q.tags ?? []).map((tag) => (
+                                            <Badge key={tag} variant="secondary" className="text-xs">
+                                              {tag}
+                                            </Badge>
+                                          ))}
+                                        </div>
+                                      )}
+                                    </>
+                                  )}
+                                </div>
                               </div>
-                            </div>
-                          </CardContent>
-                        </Card>
-                      );
-                    })}
-                  </div>
-                </CardContent>
-              </Card>
-            )}
+                            </CardContent>
+                          </Card>
+                        );
+                      })}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+            </div>
           </div>
         </main>
       </div>

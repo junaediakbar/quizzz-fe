@@ -1,5 +1,6 @@
 'use client';
 
+import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
@@ -10,6 +11,8 @@ import {
   FileText,
   BarChart3,
   ImagePlus,
+  PanelLeftClose,
+  PanelLeftOpen,
   Settings,
   Bell,
   Search,
@@ -40,8 +43,31 @@ interface TeacherNavProps {
 export function TeacherNav({ userName, children }: TeacherNavProps) {
   const pathname = usePathname();
   const { user } = useAuth();
+  const [sidebarHidden, setSidebarHidden] = useState(false);
 
   const displayName = userName || user?.name || 'Teacher';
+  void displayName;
+
+  useEffect(() => {
+    const t = setTimeout(() => {
+      try {
+        setSidebarHidden(window.localStorage.getItem('quizapp_teacher_sidebar_hidden') === '1');
+      } catch {
+        setSidebarHidden(false);
+      }
+    }, 0);
+    return () => clearTimeout(t);
+  }, []);
+
+  const toggleSidebar = useCallback(() => {
+    setSidebarHidden((prev) => {
+      const next = !prev;
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem('quizapp_teacher_sidebar_hidden', next ? '1' : '0');
+      }
+      return next;
+    });
+  }, []);
 
   const navLinkClass = (href: string) => {
     const isActive = pathname === href || (pathname?.startsWith(`${href}/`) ?? false);
@@ -65,43 +91,45 @@ export function TeacherNav({ userName, children }: TeacherNavProps) {
   return (
     <div className="flex min-h-[100dvh] md:h-screen md:max-h-screen bg-background">
       {/* Sidebar — desktop only */}
-      <aside className="hidden md:flex w-64 border-r border-border bg-sidebar flex-col z-50 shrink-0">
-        <div className="p-4 sm:p-6 border-b border-sidebar-border">
-          <Link href="/teacher/dashboard" className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-primary flex items-center justify-center text-primary-foreground text-sm font-bold ring-1 ring-border">
-              EP
-            </div>
-            <div className="min-w-0">
-              <p className="font-bold text-indigo-950 dark:text-indigo-100 text-lg leading-tight tracking-tight">
-                Instructor Portal
-              </p>
-              <p className="text-xs text-muted-foreground">Academic Integrity Suite</p>
-            </div>
-          </Link>
-        </div>
+      {!sidebarHidden && (
+        <aside className="hidden md:flex w-64 border-r border-border bg-sidebar flex-col z-50 shrink-0">
+          <div className="p-4 sm:p-6 border-b border-sidebar-border">
+            <Link href="/teacher/dashboard" className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-primary flex items-center justify-center text-primary-foreground text-sm font-bold ring-1 ring-border">
+                EP
+              </div>
+              <div className="min-w-0">
+                <p className="font-bold text-indigo-950 dark:text-indigo-100 text-lg leading-tight tracking-tight">
+                  Instructor Portal
+                </p>
+                <p className="text-xs text-muted-foreground">Academic Integrity Suite</p>
+              </div>
+            </Link>
+          </div>
 
-        <nav className="flex-1 p-2 sm:p-3 space-y-1 overflow-y-auto">
-          {navItems.map((item) => {
-            const Icon = item.icon;
-            return (
-              <Link key={item.href} href={item.href} className={navLinkClass(item.href)}>
-                <Icon className="w-5 h-5 shrink-0 opacity-90" />
-                <span className="truncate">{item.label}</span>
-              </Link>
-            );
-          })}
-        </nav>
+          <nav className="flex-1 p-2 sm:p-3 space-y-1 overflow-y-auto">
+            {navItems.map((item) => {
+              const Icon = item.icon;
+              return (
+                <Link key={item.href} href={item.href} className={navLinkClass(item.href)}>
+                  <Icon className="w-5 h-5 shrink-0 opacity-90" />
+                  <span className="truncate">{item.label}</span>
+                </Link>
+              );
+            })}
+          </nav>
 
-        {/* User — sidebar */}
-        <div className="p-2 sm:p-4 border-t border-border">
-          <UserAccountMenu
-            profileHref="/teacher/profile"
-            settingsHref="/teacher/settings"
-            avatarFallbackClassName="bg-primary/10 text-primary font-semibold"
-            className="w-full justify-start px-3 sm:px-4"
-          />
-        </div>
-      </aside>
+          {/* User — sidebar */}
+          <div className="p-2 sm:p-4 border-t border-border">
+            <UserAccountMenu
+              profileHref="/teacher/profile"
+              settingsHref="/teacher/settings"
+              avatarFallbackClassName="bg-primary/10 text-primary font-semibold"
+              className="w-full justify-start px-3 sm:px-4"
+            />
+          </div>
+        </aside>
+      )}
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col overflow-hidden min-h-0 pb-[calc(4.75rem+env(safe-area-inset-bottom))] md:pb-0">
@@ -122,7 +150,16 @@ export function TeacherNav({ userName, children }: TeacherNavProps) {
         </header>
 
         {/* Desktop — avatar kanan atas */}
-        <header className="hidden md:flex h-14 shrink-0 items-center justify-end gap-2 border-b border-border bg-card/80 px-4 sm:px-6 backdrop-blur-sm">
+        <header className="hidden md:flex h-14 shrink-0 items-center justify-between gap-2 border-b border-border bg-card/80 px-4 sm:px-6 backdrop-blur-sm">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-9 w-9"
+            onClick={toggleSidebar}
+            aria-label={sidebarHidden ? 'Tampilkan sidebar' : 'Sembunyikan sidebar'}
+          >
+            {sidebarHidden ? <PanelLeftOpen className="h-5 w-5" /> : <PanelLeftClose className="h-5 w-5" />}
+          </Button>
           <UserAccountMenu
             profileHref="/teacher/profile"
             settingsHref="/teacher/settings"

@@ -197,6 +197,26 @@
   }
 }
 
+.only-print {
+  display: none;
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  .only-print {
+    display: block !important;
+  }
+  .print-avoid-break {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  body {
+    background: #ffffff !important;
+  }
+}
+
 /* Animations */
 @keyframes slide-in {
   from {
