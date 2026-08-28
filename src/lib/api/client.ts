@@ -1,6 +1,10 @@
 import { RequestOptions, ApiError } from './types';
 
-const API_URL = process.env.NEXT_BACKEND_URL || 'http://localhost:8080/api/v1';
+// NOTE: This module runs in the browser ('use client' pages). Only NEXT_PUBLIC_*
+// vars are inlined into the client bundle at BUILD time — a non-public var
+// (e.g. NEXT_BACKEND_URL) is always undefined here in production.
+const API_URL =
+  process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080/api/v1';
 
 // Token storage helpers
 const TOKEN_KEY = 'quizapp_token';
