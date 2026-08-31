@@ -3,8 +3,27 @@ import { RequestOptions, ApiError } from './types';
 // NOTE: This module runs in the browser ('use client' pages). Only NEXT_PUBLIC_*
 // vars are inlined into the client bundle at BUILD time — a non-public var
 // (e.g. NEXT_BACKEND_URL) is always undefined here in production.
-const API_URL =
-  process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080/api/v1';
+const API_URL = process.env.NEXT_PUBLIC_API_URL;
+
+// Jangan diam-diam memanggil localhost di production: kalau env lupa diisi,
+// gagal dengan pesan yang jelas daripada request ke http://localhost:8080
+// yang pasti gagal. NODE_ENV juga di-inline oleh Next.js, jadi branch
+// development ini ikut terbuang (dead-code) di bundle production.
+if (!API_URL) {
+  if (process.env.NODE_ENV === 'development') {
+    console.warn(
+      '[quizzz] NEXT_PUBLIC_API_URL tidak di-set — pakai fallback development http://localhost:8080/api/v1',
+    );
+  } else {
+    throw new Error(
+      'NEXT_PUBLIC_API_URL tidak di-set. Local dev: isi frontend/.env.local. ' +
+        'Production: tambahkan di Vercel Dashboard → Settings → Environment Variables ' +
+        '(contoh: https://quiz-api.junaediakbar.web.id/api/v1), lalu redeploy.',
+    );
+  }
+}
+
+const API_BASE_URL = API_URL || 'http://localhost:8080/api/v1';
 
 // Token storage helpers
 const TOKEN_KEY = 'quizapp_token';
@@ -29,7 +48,7 @@ const buildUrl = (
   endpoint: string,
   params?: Record<string, string>,
 ): string => {
-  const url = `${API_URL}${endpoint}`;
+  const url = `${API_BASE_URL}${endpoint}`;
   if (!params) return url;
 
   const searchParams = new URLSearchParams();
