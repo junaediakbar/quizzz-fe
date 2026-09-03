@@ -88,71 +88,71 @@ export default function StudentDashboardPage() {
         </div>
 
         {/* Stats Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <Card className="animate-slide-in">
-            <CardContent className="p-6">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+          <Card className="animate-slide-in shadow-xs">
+            <CardContent className="p-4 sm:p-6">
               <div className="flex items-center justify-between">
-                <div className="w-12 h-12 rounded-xl bg-blue-500/10 flex items-center justify-center">
-                  <BookOpen className="w-6 h-6 text-blue-500" />
+                <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-blue-500/10 flex items-center justify-center">
+                  <BookOpen className="w-5 h-5 sm:w-6 sm:h-6 text-blue-500" />
                 </div>
-                <Badge variant="outline" className="text-xs">
-                  This semester
+                <Badge variant="outline" className="text-[10px] sm:text-xs">
+                  Semester ini
                 </Badge>
               </div>
-              <div className="mt-4">
-                <p className="text-sm text-muted-foreground">Exams Taken</p>
-                <p className="text-3xl font-bold mt-1">{totalTaken}</p>
+              <div className="mt-3 sm:mt-4">
+                <p className="text-xs sm:text-sm text-muted-foreground">Ujian Selesai</p>
+                <p className="text-2xl sm:text-3xl font-bold mt-0.5 sm:mt-1">{totalTaken}</p>
               </div>
             </CardContent>
           </Card>
 
-          <Card className="animate-slide-in" style={{ animationDelay: '0.1s' }}>
-            <CardContent className="p-6">
+          <Card className="animate-slide-in shadow-xs" style={{ animationDelay: '0.1s' }}>
+            <CardContent className="p-4 sm:p-6">
               <div className="flex items-center justify-between">
-                <div className="w-12 h-12 rounded-xl bg-green-500/10 flex items-center justify-center">
-                  <Trophy className="w-6 h-6 text-green-500" />
+                <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-green-500/10 flex items-center justify-center">
+                  <Trophy className="w-5 h-5 sm:w-6 sm:h-6 text-green-500" />
                 </div>
-                <Badge variant="outline" className="text-xs">
-                  Average
+                <Badge variant="outline" className="text-[10px] sm:text-xs">
+                  Rata-rata
                 </Badge>
               </div>
-              <div className="mt-4">
-                <p className="text-sm text-muted-foreground">Average Score</p>
-                <p className="text-3xl font-bold mt-1 text-green-500">{formatPercent(averageScore)}</p>
+              <div className="mt-3 sm:mt-4">
+                <p className="text-xs sm:text-sm text-muted-foreground">Nilai Rerata</p>
+                <p className="text-2xl sm:text-3xl font-bold mt-0.5 sm:mt-1 text-green-500">{formatPercent(averageScore)}</p>
               </div>
             </CardContent>
           </Card>
 
-          <Card className="animate-slide-in" style={{ animationDelay: '0.2s' }}>
-            <CardContent className="p-6">
+          <Card className="animate-slide-in shadow-xs" style={{ animationDelay: '0.2s' }}>
+            <CardContent className="p-4 sm:p-6">
               <div className="flex items-center justify-between">
-                <div className="w-12 h-12 rounded-xl bg-purple-500/10 flex items-center justify-center">
-                  <Target className="w-6 h-6 text-purple-500" />
+                <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-purple-500/10 flex items-center justify-center">
+                  <Target className="w-5 h-5 sm:w-6 sm:h-6 text-purple-500" />
                 </div>
-                <Badge variant="outline" className="text-xs">
-                  Progress
+                <Badge variant="outline" className="text-[10px] sm:text-xs">
+                  Kelulusan
                 </Badge>
               </div>
-              <div className="mt-4">
-                <p className="text-sm text-muted-foreground">Pass Rate</p>
-                <p className="text-3xl font-bold mt-1">87%</p>
+              <div className="mt-3 sm:mt-4">
+                <p className="text-xs sm:text-sm text-muted-foreground">Tingkat Lulus</p>
+                <p className="text-2xl sm:text-3xl font-bold mt-0.5 sm:mt-1">87%</p>
               </div>
             </CardContent>
           </Card>
 
-          <Card className="animate-slide-in" style={{ animationDelay: '0.3s' }}>
-            <CardContent className="p-6">
+          <Card className="animate-slide-in shadow-xs" style={{ animationDelay: '0.3s' }}>
+            <CardContent className="p-4 sm:p-6">
               <div className="flex items-center justify-between">
-                <div className="w-12 h-12 rounded-xl bg-orange-500/10 flex items-center justify-center">
-                  <Clock className="w-6 h-6 text-orange-500" />
+                <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-orange-500/10 flex items-center justify-center">
+                  <Clock className="w-5 h-5 sm:w-6 sm:h-6 text-orange-500" />
                 </div>
-                <Badge variant="outline" className="text-xs">
-                  Scheduled
+                <Badge variant="outline" className="text-[10px] sm:text-xs">
+                  Jadwal
                 </Badge>
               </div>
-              <div className="mt-4">
-                <p className="text-sm text-muted-foreground">Upcoming</p>
-                <p className="text-3xl font-bold mt-1">{upcomingExams.length}</p>
+              <div className="mt-3 sm:mt-4">
+                <p className="text-xs sm:text-sm text-muted-foreground">Akan Datang</p>
+                <p className="text-2xl sm:text-3xl font-bold mt-0.5 sm:mt-1">{upcomingExams.length}</p>
               </div>
             </CardContent>
           </Card>

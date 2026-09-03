@@ -25,6 +25,7 @@ import {
   Eye,
   EyeOff,
   Loader2,
+  LayoutGrid,
   Shield,
   WifiOff,
   Wifi,
@@ -74,6 +75,7 @@ export default function ExamPage() {
   const [pageHidden, setPageHidden] = useState(false);
   const [online, setOnline] = useState(true);
   const [security, setSecurity] = useState<ExamSecuritySettings>(DEFAULT_EXAM_SECURITY);
+  const [mobileNavigatorOpen, setMobileNavigatorOpen] = useState(false);
 
   // Load exam metadata only (PRD: agree rules → fullscreen → start session)
   useEffect(() => {
@@ -561,19 +563,19 @@ export default function ExamPage() {
       )}
 
       <header className="border-b border-border bg-card/90 backdrop-blur-sm sticky top-0 z-40">
-        <div className="max-w-5xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <h1 className="font-heading font-semibold text-lg">{examTitle}</h1>
-            <p className="text-xs text-muted-foreground">
-              ExamPro AI · {security.enabled ? 'Sesi terproteksi' : 'Sesi standar'}
+        <div className="max-w-5xl mx-auto px-4 py-2.5 sm:py-3 flex items-center justify-between gap-2 sm:gap-4">
+          <div className="min-w-0 flex-1">
+            <h1 className="font-heading font-semibold text-base sm:text-lg truncate">{examTitle}</h1>
+            <p className="text-[11px] sm:text-xs text-muted-foreground truncate">
+              {security.enabled ? 'Sesi terproteksi' : 'Sesi standar'} · Soal {currentQuestionIndex + 1}/{examQuestions.length}
             </p>
           </div>
-          <div className="flex items-center gap-4 flex-wrap">
-            <div className={cn('flex items-center gap-2 font-mono text-lg font-semibold', getTimeColor())}>
-              <Clock className="w-5 h-5" />
-              {formatCountdown(timeRemaining)}
+          <div className="flex items-center gap-2 sm:gap-4 shrink-0">
+            <div className={cn('flex items-center gap-1.5 font-mono text-base sm:text-lg font-semibold px-2 py-1 rounded-md bg-muted/40', getTimeColor())}>
+              <Clock className="w-4 h-4 sm:w-5 sm:h-5 shrink-0" />
+              <span>{formatCountdown(timeRemaining)}</span>
             </div>
-            <div className="hidden sm:block w-40">
+            <div className="hidden md:block w-36 lg:w-40">
               <div className="flex justify-between text-xs mb-1 text-muted-foreground">
                 <span>Progress</span>
                 <span>
@@ -582,24 +584,44 @@ export default function ExamPage() {
               </div>
               <Progress value={progress} className="h-1.5" />
             </div>
-            <Button variant="outline" size="sm" onClick={toggleFullscreen} className="gap-2">
-              {isFullscreen ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              Focus
+            <Button variant="outline" size="sm" onClick={toggleFullscreen} className="hidden sm:inline-flex gap-1.5 h-8">
+              {isFullscreen ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+              <span className="hidden sm:inline">Focus</span>
             </Button>
-            <Button size="sm" onClick={handleSubmit} className="gap-2">
-              <CheckCircle2 className="w-4 h-4" />
-              Submit
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setMobileNavigatorOpen(true)}
+              className="lg:hidden gap-1.5 h-8 px-2.5"
+              aria-label="Daftar Soal"
+            >
+              <LayoutGrid className="w-4 h-4" />
+              <span className="text-xs font-medium">{answeredCount}/{examQuestions.length}</span>
+            </Button>
+            <Button size="sm" onClick={handleSubmit} className="gap-1.5 h-8">
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              <span className="text-xs sm:text-sm font-medium">Kirim</span>
             </Button>
           </div>
         </div>
+        {/* Mobile top thin progress indicator */}
+        <div className="h-1 w-full bg-muted md:hidden">
+          <div
+            className="h-full bg-primary transition-all duration-300 ease-out"
+            style={{ width: `${progress}%` }}
+          />
+        </div>
       </header>
 
-      <div className="max-w-5xl mx-auto px-4 py-6 flex flex-col lg:flex-row gap-6">
+      <div className="max-w-5xl mx-auto px-4 py-4 sm:py-6 flex flex-col lg:flex-row gap-6 pb-24 md:pb-6">
         <aside className="hidden lg:block w-56 shrink-0 space-y-4">
-          <Card className="border-border">
+          <Card className="border-border sticky top-20">
             <CardContent className="p-4">
-              <h3 className="font-heading text-sm font-semibold mb-3">Navigator</h3>
-              <div className="grid grid-cols-5 gap-1.5">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="font-heading text-sm font-semibold">Navigator Soal</h3>
+                <span className="text-xs text-muted-foreground">{answeredCount}/{examQuestions.length}</span>
+              </div>
+              <div className="grid grid-cols-5 gap-1.5 max-h-[60vh] overflow-y-auto p-0.5">
                 {examQuestions.map((q, index) => {
                   const status = getQuestionStatus(q.id);
                   const isCurrent = index === currentQuestionIndex;
@@ -609,17 +631,31 @@ export default function ExamPage() {
                       type="button"
                       onClick={() => goToQuestion(index)}
                       className={cn(
-                        'w-9 h-9 rounded text-xs font-medium transition-colors',
-                        isCurrent && 'ring-2 ring-primary ring-offset-2',
-                        status === 'answered' && 'bg-emerald-600 text-white',
-                        status === 'flagged' && 'bg-amber-500 text-white',
-                        status === 'unanswered' && 'bg-muted hover:bg-muted/80'
+                        'h-9 w-full rounded-md text-xs font-medium transition-all touch-manipulation flex items-center justify-center',
+                        isCurrent && 'ring-2 ring-primary ring-offset-2 font-bold shadow-sm',
+                        status === 'answered' && 'bg-emerald-600 text-white hover:bg-emerald-700',
+                        status === 'flagged' && 'bg-amber-500 text-white hover:bg-amber-600',
+                        status === 'unanswered' && 'bg-muted hover:bg-muted/80 text-foreground'
                       )}
                     >
                       {index + 1}
                     </button>
                   );
                 })}
+              </div>
+              <div className="mt-4 pt-3 border-t border-border space-y-1.5 text-[11px] text-muted-foreground">
+                <div className="flex items-center gap-2">
+                  <span className="w-3 h-3 rounded bg-emerald-600 shrink-0" />
+                  <span>Terjawab</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="w-3 h-3 rounded bg-amber-500 shrink-0" />
+                  <span>Ragu-ragu (Flag)</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="w-3 h-3 rounded bg-muted border shrink-0" />
+                  <span>Belum dijawab</span>
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -633,14 +669,14 @@ export default function ExamPage() {
             )}
           >
             <Card className="border-border border-t-[3px] border-t-primary shadow-sm">
-              <CardContent className="p-6 md:p-8">
-                <div className="flex flex-wrap items-start justify-between gap-4 mb-6">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Badge variant="outline" className="text-base px-2.5 py-0.5 font-heading">
-                      Q{currentQuestionIndex + 1}
+              <CardContent className="p-4 sm:p-6 md:p-8">
+                <div className="flex items-center justify-between gap-2 mb-4 sm:mb-6">
+                  <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+                    <Badge variant="outline" className="text-sm sm:text-base px-2 sm:px-2.5 py-0.5 font-heading">
+                      Soal #{currentQuestionIndex + 1}
                     </Badge>
-                    <Badge variant="secondary">{currentQuestion.points} pts</Badge>
-                    <Badge variant="outline" className="capitalize">
+                    <Badge variant="secondary" className="text-xs">{currentQuestion.points} poin</Badge>
+                    <Badge variant="outline" className="capitalize text-xs">
                       {currentQuestion.difficulty}
                     </Badge>
                   </div>
@@ -649,75 +685,89 @@ export default function ExamPage() {
                     size="sm"
                     onClick={toggleFlag}
                     className={cn(
+                      'h-8 px-2.5 text-xs sm:text-sm touch-manipulation',
                       flaggedQuestions.has(currentQuestion.id) &&
-                        'bg-amber-500/10 border-amber-500/50 text-amber-900'
+                        'bg-amber-500/15 border-amber-500/60 text-amber-700 dark:text-amber-300 font-medium'
                     )}
                   >
-                    <Flag className="w-4 h-4 mr-1" />
-                    Flag
+                    <Flag className={cn("w-3.5 h-3.5 mr-1.5", flaggedQuestions.has(currentQuestion.id) && "fill-amber-500 text-amber-500")} />
+                    <span>{flaggedQuestions.has(currentQuestion.id) ? 'Ragu-ragu' : 'Tandai'}</span>
                   </Button>
                 </div>
 
-                <div className="mb-8">
+                <div className="mb-6 sm:mb-8">
                   <QuestionStemWithImages
                     title={currentQuestion.title}
                     content={currentQuestion.content}
                     images={currentQuestion.images}
                     imageUrls={currentQuestion.imageUrls}
-                    titleClassName="text-lg md:text-[18px] font-medium leading-relaxed mb-3 font-heading"
-                    contentClassName="text-[16px] md:text-[18px] leading-relaxed text-muted-foreground"
+                    titleClassName="text-base sm:text-lg md:text-[18px] font-medium leading-relaxed mb-3 font-heading"
+                    contentClassName="text-[15px] sm:text-[16px] md:text-[18px] leading-relaxed text-foreground/90"
                   />
                 </div>
 
                 <div className="space-y-3">
                   {currentQuestion.type === 'multiple-choice' && currentQuestion.options && (
-                    <div className="space-y-2">
-                      {currentQuestion.options.map((option, index) => (
-                        <button
-                          key={index}
-                          type="button"
-                          onClick={() => handleAnswer(option)}
-                          className={cn(
-                            'w-full text-left p-4 rounded-lg border text-[15px] md:text-[16px] transition-colors flex items-start gap-3',
-                            currentAnswer === option
-                              ? 'border-primary bg-primary/5'
-                              : 'border-border hover:border-primary/30'
-                          )}
-                        >
-                          <span className="font-medium text-primary shrink-0 pt-0.5">
-                            {String.fromCharCode(65 + index)}.
-                          </span>
-                          <div className="flex-1 min-w-0 space-y-2">
-                            <MathText className="leading-relaxed">
-                              {stripMediaMarkersFromText(option)}
-                            </MathText>
-                            <OptionImageDisplay
-                              images={currentQuestion.images}
-                              optionIndex={index}
-                            />
-                          </div>
-                        </button>
-                      ))}
+                    <div className="space-y-2.5">
+                      {currentQuestion.options.map((option, index) => {
+                        const isSelected = currentAnswer === option;
+                        return (
+                          <button
+                            key={index}
+                            type="button"
+                            onClick={() => handleAnswer(option)}
+                            className={cn(
+                              'w-full text-left p-3.5 sm:p-4 rounded-xl border text-[14px] sm:text-[15px] md:text-[16px] transition-all flex items-start gap-3 touch-manipulation cursor-pointer',
+                              isSelected
+                                ? 'border-primary bg-primary/10 ring-1 ring-primary shadow-xs font-medium text-foreground'
+                                : 'border-border bg-card hover:bg-muted/40 hover:border-primary/40 active:scale-[0.99]'
+                            )}
+                          >
+                            <span
+                              className={cn(
+                                'flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-bold transition-colors mt-0.5',
+                                isSelected
+                                  ? 'bg-primary text-primary-foreground'
+                                  : 'bg-muted text-muted-foreground'
+                              )}
+                            >
+                              {String.fromCharCode(65 + index)}
+                            </span>
+                            <div className="flex-1 min-w-0 space-y-2">
+                              <MathText className="leading-relaxed">
+                                {stripMediaMarkersFromText(option)}
+                              </MathText>
+                              <OptionImageDisplay
+                                images={currentQuestion.images}
+                                optionIndex={index}
+                              />
+                            </div>
+                          </button>
+                        );
+                      })}
                     </div>
                   )}
 
                   {currentQuestion.type === 'true-false' && (
-                    <div className="flex gap-3">
-                      {['True', 'False'].map((option) => (
-                        <button
-                          key={option}
-                          type="button"
-                          onClick={() => handleAnswer(option.toLowerCase())}
-                          className={cn(
-                            'flex-1 p-5 rounded-lg border-2 font-medium',
-                            currentAnswer === option.toLowerCase()
-                              ? 'border-primary bg-primary/5'
-                              : 'border-border'
-                          )}
-                        >
-                          {option}
-                        </button>
-                      ))}
+                    <div className="grid grid-cols-2 gap-3">
+                      {['True', 'False'].map((option) => {
+                        const isSelected = currentAnswer === option.toLowerCase();
+                        return (
+                          <button
+                            key={option}
+                            type="button"
+                            onClick={() => handleAnswer(option.toLowerCase())}
+                            className={cn(
+                              'p-4 sm:p-5 rounded-xl border-2 font-medium text-center transition-all touch-manipulation active:scale-[0.98]',
+                              isSelected
+                                ? 'border-primary bg-primary/10 text-primary font-bold ring-1 ring-primary'
+                                : 'border-border bg-card hover:bg-muted/40 hover:border-primary/40'
+                            )}
+                          >
+                            {option === 'True' ? 'Benar (True)' : 'Salah (False)'}
+                          </button>
+                        );
+                      })}
                     </div>
                   )}
 
@@ -727,23 +777,32 @@ export default function ExamPage() {
                     <textarea
                       value={currentAnswer}
                       onChange={(e) => handleAnswer(e.target.value)}
-                      placeholder="Your answer…"
-                      className="w-full p-4 rounded-lg border border-input min-h-[140px] text-[16px] leading-relaxed focus-visible:ring-2 focus-visible:ring-ring"
+                      placeholder="Tuliskan jawaban Anda di sini…"
+                      className="w-full p-3.5 sm:p-4 rounded-xl border border-input min-h-[140px] text-[15px] sm:text-[16px] leading-relaxed focus-visible:ring-2 focus-visible:ring-ring bg-card"
                     />
                   )}
                 </div>
 
-                <div className="flex items-center justify-between mt-10 pt-6 border-t border-border">
+                {/* Desktop inline bottom actions */}
+                <div className="hidden md:flex items-center justify-between mt-8 pt-5 border-t border-border">
                   <Button
                     variant="outline"
                     onClick={goToPrevious}
                     disabled={currentQuestionIndex === 0}
+                    className="touch-manipulation"
                   >
                     <ChevronLeft className="w-4 h-4 mr-1" />
-                    Previous
+                    Sebelumnya
                   </Button>
-                  <Button onClick={goToNext} disabled={currentQuestionIndex === examQuestions.length - 1}>
-                    Next
+                  <div className="text-xs text-muted-foreground">
+                    {currentQuestionIndex + 1} dari {examQuestions.length}
+                  </div>
+                  <Button
+                    onClick={goToNext}
+                    disabled={currentQuestionIndex === examQuestions.length - 1}
+                    className="touch-manipulation"
+                  >
+                    Selanjutnya
                     <ChevronRight className="w-4 h-4 ml-1" />
                   </Button>
                 </div>
@@ -757,6 +816,130 @@ export default function ExamPage() {
           )}
         </main>
       </div>
+
+      {/* Floating Bottom Sticky Bar for Mobile */}
+      <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-card/95 backdrop-blur-md border-t border-border px-3 py-2 safe-area-pb shadow-lg">
+        <div className="flex items-center justify-between gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={goToPrevious}
+            disabled={currentQuestionIndex === 0}
+            className="flex-1 h-10 touch-manipulation text-xs font-medium"
+          >
+            <ChevronLeft className="w-4 h-4 mr-1 shrink-0" />
+            Prev
+          </Button>
+
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => setMobileNavigatorOpen(true)}
+            className="h-10 px-3 touch-manipulation flex items-center gap-1.5"
+            aria-label="Buka navigasi soal"
+          >
+            <LayoutGrid className="w-4 h-4 text-primary" />
+            <span className="text-xs font-semibold">
+              {currentQuestionIndex + 1}/{examQuestions.length}
+            </span>
+          </Button>
+
+          <Button
+            variant="default"
+            size="sm"
+            onClick={goToNext}
+            disabled={currentQuestionIndex === examQuestions.length - 1}
+            className="flex-1 h-10 touch-manipulation text-xs font-medium"
+          >
+            Next
+            <ChevronRight className="w-4 h-4 ml-1 shrink-0" />
+          </Button>
+        </div>
+      </div>
+
+      {/* Dialog Drawer / Sheet for Mobile Navigator */}
+      <Dialog open={mobileNavigatorOpen} onOpenChange={setMobileNavigatorOpen}>
+        <DialogContent className="max-w-md w-[92vw] sm:max-w-lg max-h-[85vh] flex flex-col p-4 sm:p-6 rounded-2xl">
+          <DialogHeader className="pb-2 border-b border-border">
+            <div className="flex items-center justify-between">
+              <DialogTitle className="text-base sm:text-lg font-heading">Navigasi Semua Soal</DialogTitle>
+              <Badge variant="outline" className="text-xs">
+                {answeredCount}/{examQuestions.length} Terjawab
+              </Badge>
+            </div>
+            <DialogDescription className="text-xs">
+              Pilih nomor soal untuk langsung berpindah halaman.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex-1 overflow-y-auto py-3">
+            <div className="grid grid-cols-5 gap-2">
+              {examQuestions.map((q, index) => {
+                const status = getQuestionStatus(q.id);
+                const isCurrent = index === currentQuestionIndex;
+                return (
+                  <button
+                    key={q.id}
+                    type="button"
+                    onClick={() => {
+                      goToQuestion(index);
+                      setMobileNavigatorOpen(false);
+                    }}
+                    className={cn(
+                      'h-11 rounded-lg text-xs font-medium transition-all touch-manipulation flex flex-col items-center justify-center relative active:scale-95',
+                      isCurrent && 'ring-2 ring-primary ring-offset-2 font-bold shadow-sm',
+                      status === 'answered' && 'bg-emerald-600 text-white',
+                      status === 'flagged' && 'bg-amber-500 text-white',
+                      status === 'unanswered' && 'bg-muted text-foreground'
+                    )}
+                  >
+                    <span>{index + 1}</span>
+                    {flaggedQuestions.has(q.id) && (
+                      <span className="w-1.5 h-1.5 rounded-full bg-white absolute top-1 right-1" />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="mt-4 pt-3 border-t border-border grid grid-cols-3 gap-2 text-[11px] text-muted-foreground">
+              <div className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded bg-emerald-600 shrink-0" />
+                <span>Terjawab</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded bg-amber-500 shrink-0" />
+                <span>Ragu-ragu</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded bg-muted border shrink-0" />
+                <span>Belum</span>
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter className="pt-2 border-t border-border flex flex-row gap-2 justify-between sm:justify-between">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setMobileNavigatorOpen(false)}
+              className="flex-1"
+            >
+              Tutup
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => {
+                setMobileNavigatorOpen(false);
+                handleSubmit();
+              }}
+              className="flex-1"
+            >
+              Kirim Ujian
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={showSubmitDialog} onOpenChange={setShowSubmitDialog}>
         <DialogContent>

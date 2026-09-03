@@ -254,27 +254,27 @@ export default function TeacherDashboardPage() {
         </div>
 
         {/* Stats Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
           {statCards.map((stat) => {
             const Icon = stat.icon;
             return (
-              <Card key={stat.title} className="animate-slide-in">
-                <CardContent className="p-6">
+              <Card key={stat.title} className="animate-slide-in shadow-xs">
+                <CardContent className="p-4 sm:p-6">
                   <div className="flex items-center justify-between">
-                    <div className={cn('w-12 h-12 rounded-xl flex items-center justify-center', stat.bgColor)}>
-                      <Icon className={cn('w-6 h-6', stat.color)} />
+                    <div className={cn('w-10 h-10 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center', stat.bgColor)}>
+                      <Icon className={cn('w-5 h-5 sm:w-6 sm:h-6', stat.color)} />
                     </div>
-                    <Badge variant="outline" className="text-xs">
+                    <Badge variant="outline" className="text-[10px] sm:text-xs">
                       {stat.change}
                     </Badge>
                   </div>
-                  <div className="mt-4">
-                    <p className="text-sm text-muted-foreground">{stat.title}</p>
-                    <p className="text-3xl font-bold mt-1">{stat.value}</p>
+                  <div className="mt-3 sm:mt-4">
+                    <p className="text-xs sm:text-sm text-muted-foreground">{stat.title}</p>
+                    <p className="text-2xl sm:text-3xl font-bold mt-0.5 sm:mt-1">{stat.value}</p>
                     {stat.title === 'Total Students' && (
                       <Link
                         href="/teacher/students"
-                        className="mt-2 inline-block text-xs font-medium text-primary hover:underline"
+                        className="mt-1 sm:mt-2 inline-block text-[11px] sm:text-xs font-medium text-primary hover:underline"
                       >
                         Kelola siswa
                       </Link>
@@ -317,24 +317,24 @@ export default function TeacherDashboardPage() {
                     </div>
                   ) : (
                     recentExams.map((exam) => (
-                      <div key={exam.id} className="flex items-center justify-between p-4 border rounded-lg hover:bg-muted/50">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-2">
-                            <h4 className="font-medium">{exam.title}</h4>
-                            <Badge variant="outline">{exam.subject}</Badge>
-                            <Badge variant="outline" className="capitalize">
+                      <div key={exam.id} className="flex items-start sm:items-center justify-between p-3.5 sm:p-4 border rounded-xl hover:bg-muted/50 gap-2">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 mb-1.5">
+                            <h4 className="font-medium text-sm sm:text-base truncate max-w-[200px] sm:max-w-none">{exam.title}</h4>
+                            <Badge variant="outline" className="text-[10px] sm:text-xs">{exam.subject}</Badge>
+                            <Badge variant="outline" className="capitalize text-[10px] sm:text-xs">
                               {formatGradeLabel(exam.grade)}
                             </Badge>
                             {getStatusBadge(exam.status)}
                           </div>
-                          <p className="text-sm text-muted-foreground">
+                          <p className="text-xs sm:text-sm text-muted-foreground line-clamp-2">
                             {exam.description || 'No description'}
                           </p>
                         </div>
 
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-8 w-8">
+                            <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0">
                               <MoreVertical className="h-4 w-4" />
                             </Button>
                           </DropdownMenuTrigger>

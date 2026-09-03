@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -127,6 +127,31 @@ export function ExamWizard({ examId }: ExamWizardProps) {
   useEffect(() => {
     if (!authLoading && user?.id) loadBank();
   }, [authLoading, user?.id, loadBank]);
+
+  // Pre-select questions passed via ?question_ids= (e.g. "Simpan & Buat Ujian"
+  // from the Question Bank page jumps here with the freshly added question).
+  const preselectApplied = useRef(false);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (preselectApplied.current || bankQuestions.length === 0) return;
+    const qids = new URLSearchParams(window.location.search).get('question_ids');
+    if (!qids) return;
+    const ids = qids
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (!ids.length) return;
+    const matched = ids
+      .map((id) => bankQuestions.find((q) => q.id === id))
+      .filter((q): q is Question => !!q);
+    if (matched.length) {
+      setSelectedQuestions((prev) => {
+        const existing = new Set(prev.map((q) => q.id));
+        return [...prev, ...matched.filter((q) => !existing.has(q.id))];
+      });
+      preselectApplied.current = true;
+    }
+  }, [bankQuestions]);
 
   useEffect(() => {
     if (!examId || authLoading) return;

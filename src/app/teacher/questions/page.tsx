@@ -1,6 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { Fragment, useCallback, useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -53,6 +54,9 @@ import {
   Download,
   Loader2,
   CheckCircle2,
+  CalendarDays,
+  ChevronDown,
+  ChevronRight,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Question, QuestionBank, QuestionType } from '@/lib/types';
@@ -67,6 +71,7 @@ import { toast } from 'sonner';
 
 export default function QuestionBankPage() {
   const { user, isLoading: authLoading } = useAuth();
+  const router = useRouter();
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [selectedType, setSelectedType] = useState<string>('all');
@@ -107,6 +112,9 @@ export default function QuestionBankPage() {
   const [bankDialogOpen, setBankDialogOpen] = useState(false);
   const [newBankName, setNewBankName] = useState('');
   const [moveBankId, setMoveBankId] = useState<string>('');
+  const [bankSelectionIds, setBankSelectionIds] = useState<string[] | null>(null);
+  const [creatingBank, setCreatingBank] = useState(false);
+  const [collapsedDates, setCollapsedDates] = useState<Set<string>>(new Set());
 
   // Questions that need fixing (MCQ without options)
   const [questionsNeedingFix, setQuestionsNeedingFix] = useState<Question[]>([]);
@@ -213,6 +221,81 @@ export default function QuestionBankPage() {
   }, [authLoading, user?.id, loadQuestions]);
 
   const filteredQuestions = questions;
+
+  // ---- Group questions by creation date (local timezone) ----
+  const toLocalDateKey = (d: Date) => {
+    const yy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${yy}-${mm}-${dd}`;
+  };
+
+  const groupedQuestions = (() => {
+    const sorted = [...filteredQuestions].sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
+    const map = new Map<string, Question[]>();
+    for (const q of sorted) {
+      const key = toLocalDateKey(new Date(q.createdAt));
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(q);
+    }
+    return [...map.entries()].map(([dateKey, questions]) => ({
+      dateKey,
+      dateLabel: new Date(`${dateKey}T00:00:00`).toLocaleDateString('id-ID', {
+        weekday: 'long',
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric',
+      }),
+      questions,
+    }));
+  })();
+
+  const toggleDateSelection = (dateKey: string) => {
+    const group = groupedQuestions.find((g) => g.dateKey === dateKey);
+    if (!group) return;
+    const allSelected = group.questions.every((q) => selectedQuestions.has(q.id));
+    const next = new Set(selectedQuestions);
+    if (allSelected) {
+      group.questions.forEach((q) => next.delete(q.id));
+    } else {
+      group.questions.forEach((q) => next.add(q.id));
+    }
+    setSelectedQuestions(next);
+  };
+
+  // Toggle a single date section between collapsed / expanded.
+  const toggleCollapse = (dateKey: string) => {
+    setCollapsedDates((prev) => {
+      const next = new Set(prev);
+      if (next.has(dateKey)) next.delete(dateKey);
+      else next.add(dateKey);
+      return next;
+    });
+  };
+
+  const setAllCollapsed = (collapsed: boolean) => {
+    setCollapsedDates(
+      new Set(collapsed ? groupedQuestions.map((g) => g.dateKey) : [])
+    );
+  };
+
+  const handleDeleteDate = async (dateKey: string, dateLabel: string) => {
+    const group = groupedQuestions.find((g) => g.dateKey === dateKey);
+    if (!group) return;
+    if (!confirm(`Hapus ${group.questions.length} soal pada ${dateLabel}?`)) return;
+    try {
+      await Promise.all(group.questions.map((q) => questionsApi.delete(q.id)));
+      toast.success(`${group.questions.length} soal dihapus`);
+      const removed = new Set(group.questions.map((q) => q.id));
+      setSelectedQuestions((prev) => new Set([...prev].filter((id) => !removed.has(id))));
+      await loadQuestions();
+      await loadBanks();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Gagal menghapus');
+    }
+  };
 
   const questionTypes: { value: QuestionType; label: string }[] = [
     { value: 'multiple-choice', label: 'Multiple Choice' },
@@ -333,10 +416,12 @@ export default function QuestionBankPage() {
     }
   };
 
-  const submitNewQuestion = async () => {
+  // Creates the new question (validating inputs). Returns the created question,
+  // or null when validation fails / the request errors.
+  const saveNewQuestion = async (): Promise<Question | null> => {
     if (!newQ.title.trim() || !newQ.content.trim() || !newQ.correct_answer.trim()) {
       toast.error('Judul, isi, dan jawaban benar wajib diisi');
-      return;
+      return null;
     }
     let options: string[] | undefined;
     if (newQ.type === 'multiple-choice') {
@@ -346,7 +431,7 @@ export default function QuestionBankPage() {
         .filter(Boolean);
       if (options.length < 2) {
         toast.error('MCQ: isi minimal 2 opsi (satu baris per opsi)');
-        return;
+        return null;
       }
     }
     const fromText = newQ.imageUrlsText
@@ -357,7 +442,7 @@ export default function QuestionBankPage() {
 
     setSaving(true);
     try {
-      await questionsApi.create({
+      const created = await questionsApi.create({
         type: newQ.type,
         title: newQ.title.trim(),
         content: newQ.content.trim(),
@@ -382,11 +467,24 @@ export default function QuestionBankPage() {
       });
       await loadQuestions();
       await loadBanks();
+      return created;
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Gagal menyimpan');
+      return null;
     } finally {
       setSaving(false);
     }
+  };
+
+  const submitNewQuestion = async () => {
+    await saveNewQuestion();
+  };
+
+  // Save the question, then jump to the exam wizard with it pre-selected.
+  const submitAndCreateExam = async () => {
+    const created = await saveNewQuestion();
+    if (!created) return;
+    router.push(`/teacher/exams/create?question_ids=${encodeURIComponent(created.id)}`);
   };
 
   const handleExport = async () => {
@@ -432,15 +530,37 @@ export default function QuestionBankPage() {
 
   const createBank = async () => {
     if (!newBankName.trim()) return;
+    setCreatingBank(true);
     try {
-      await questionBanksApi.create({ name: newBankName.trim(), is_public: false });
+      const bank = await questionBanksApi.create({ name: newBankName.trim(), is_public: false });
+      if (bankSelectionIds && bankSelectionIds.length > 0) {
+        let order = 0;
+        for (const qid of bankSelectionIds) {
+          await questionBanksApi.addQuestion(bank.id, qid, order++);
+        }
+      }
       toast.success('Bank soal dibuat');
       setNewBankName('');
+      setBankSelectionIds(null);
+      setSelectedQuestions((prev) => {
+        if (!bankSelectionIds?.length) return prev;
+        const added = new Set(bankSelectionIds);
+        return new Set([...prev].filter((id) => !added.has(id)));
+      });
       setBankDialogOpen(false);
       await loadBanks();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Gagal membuat bank');
+    } finally {
+      setCreatingBank(false);
     }
+  };
+
+  // Open the bank dialog and pre-fill the questions that will be added to it.
+  const openCreateBankDialogForQuestions = (ids: string[]) => {
+    setBankSelectionIds([...ids]);
+    setNewBankName('');
+    setBankDialogOpen(true);
   };
 
   const handleDeleteBank = async (bankId: string, bankName: string) => {
@@ -708,6 +828,14 @@ export default function QuestionBankPage() {
                         <FolderKanban className="w-4 h-4 mr-2" />
                         Move to bank
                       </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => openCreateBankDialogForQuestions([...selectedQuestions])}
+                      >
+                        <FolderOpen className="w-4 h-4 mr-2" />
+                        Buat bank baru
+                      </Button>
                       <Button variant="destructive" size="sm" onClick={handleBulkDelete}>
                         <Trash2 className="w-4 h-4 mr-2" />
                         Delete
@@ -723,7 +851,28 @@ export default function QuestionBankPage() {
                     <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
                   </div>
                 ) : (
-                  <div className="overflow-x-auto -mx-px">
+                  <>
+                    <div className="flex items-center justify-between gap-2 px-4 py-2 border-b border-border">
+                      <span className="text-sm text-muted-foreground">
+                        {groupedQuestions.length} tanggal · {filteredQuestions.length} soal
+                      </span>
+                      {filteredQuestions.length > 0 && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-sm"
+                          onClick={() => setAllCollapsed(collapsedDates.size < groupedQuestions.length)}
+                        >
+                          {collapsedDates.size < groupedQuestions.length ? (
+                            <ChevronDown className="w-4 h-4 mr-1.5" />
+                          ) : (
+                            <ChevronRight className="w-4 h-4 mr-1.5" />
+                          )}
+                          {collapsedDates.size < groupedQuestions.length ? 'Ciutkan semua' : 'Luaskan semua'}
+                        </Button>
+                      )}
+                    </div>
+                    <div className="overflow-x-auto -mx-px">
                     <Table>
                       <TableHeader>
                         <TableRow>
@@ -745,104 +894,166 @@ export default function QuestionBankPage() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {filteredQuestions.map((question) => (
-                          <TableRow key={question.id}>
-                            <TableCell>
-                              <Checkbox
-                                checked={selectedQuestions.has(question.id)}
-                                onCheckedChange={() => toggleQuestionSelection(question.id)}
-                              />
-                            </TableCell>
-                            <TableCell>
-                              <div className="flex items-start gap-2">
-                                <div className="flex-1 min-w-0">
-                                  <div className="flex items-center gap-2 flex-wrap">
-                                    <p className="font-medium">{question.title}</p>
-                                    {question.type === 'multiple-choice' && (!question.options || question.options.length === 0) && (
-                                      <Badge variant="outline" className="bg-orange-500/10 text-orange-500 text-xs shrink-0">
-                                        <span className="mr-1">⚠️</span>Tanpa Opsi
+                        {groupedQuestions.map((group) => (
+                          <Fragment key={group.dateKey}>
+                            <TableRow className="bg-muted/50 hover:bg-muted/50">
+                              <TableCell colSpan={7} className="p-0">
+                                <div className="flex items-center justify-between gap-3 px-3 py-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleCollapse(group.dateKey)}
+                                    className="flex items-center gap-3 min-w-0 text-left cursor-pointer"
+                                    title={collapsedDates.has(group.dateKey) ? 'Perluas' : 'Ciutkan'}
+                                  >
+                                    <span className="text-muted-foreground shrink-0">
+                                      {collapsedDates.has(group.dateKey) ? (
+                                        <ChevronRight className="w-4 h-4" />
+                                      ) : (
+                                        <ChevronDown className="w-4 h-4" />
+                                      )}
+                                    </span>
+                                    <CalendarDays className="w-4 h-4 shrink-0 text-muted-foreground" />
+                                    <span className="text-sm font-semibold leading-tight truncate">
+                                      {group.dateLabel}
+                                    </span>
+                                    <Badge variant="outline" className="shrink-0">
+                                      {group.questions.length} soal
+                                    </Badge>
+                                  </button>
+                                  <div className="flex items-center gap-2 shrink-0">
+                                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                                      <Checkbox
+                                        checked={group.questions.every((q) => selectedQuestions.has(q.id))}
+                                        onCheckedChange={() => toggleDateSelection(group.dateKey)}
+                                      />
+                                      <span>Pilih semua</span>
+                                    </div>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="text-sm"
+                                      onClick={() =>
+                                        openCreateBankDialogForQuestions(group.questions.map((q) => q.id))
+                                      }
+                                    >
+                                      <FolderOpen className="w-4 h-4 mr-1.5" />
+                                      Buat bank
+                                    </Button>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="text-sm text-destructive hover:text-destructive"
+                                      onClick={() => handleDeleteDate(group.dateKey, group.dateLabel)}
+                                    >
+                                      <Trash2 className="w-4 h-4 mr-1.5" />
+                                      Hapus
+                                    </Button>
+                                  </div>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                            {!collapsedDates.has(group.dateKey) &&
+                              group.questions.map((question) => (
+                              <TableRow key={question.id}>
+                                <TableCell>
+                                  <Checkbox
+                                    checked={selectedQuestions.has(question.id)}
+                                    onCheckedChange={() => toggleQuestionSelection(question.id)}
+                                  />
+                                </TableCell>
+                                <TableCell>
+                                  <div className="flex items-start gap-2">
+                                    <div className="flex-1 min-w-0">
+                                      <div className="flex items-center gap-2 flex-wrap">
+                                        <p className="font-medium">{question.title}</p>
+                                        {question.type === 'multiple-choice' && (!question.options || question.options.length === 0) && (
+                                          <Badge variant="outline" className="bg-orange-500/10 text-orange-500 text-xs shrink-0">
+                                            <span className="mr-1">⚠️</span>Tanpa Opsi
+                                          </Badge>
+                                        )}
+                                      </div>
+                                      <MathText className="text-sm text-muted-foreground line-clamp-1 block">
+                                        {question.content}
+                                      </MathText>
+                                    </div>
+                                  </div>
+                                </TableCell>
+                                <TableCell>{getTypeBadge(question.type)}</TableCell>
+                                <TableCell>{getDifficultyBadge(question.difficulty)}</TableCell>
+                                <TableCell>{question.points}</TableCell>
+                                <TableCell>
+                                  <div className="flex flex-wrap gap-1">
+                                    {(question.tags || []).slice(0, 2).map((tag) => (
+                                      <Badge key={tag} variant="outline" className="text-xs">
+                                        {tag}
+                                      </Badge>
+                                    ))}
+                                    {(question.tags || []).length > 2 && (
+                                      <Badge variant="outline" className="text-xs">
+                                        +{(question.tags || []).length - 2}
                                       </Badge>
                                     )}
                                   </div>
-                                  <MathText className="text-sm text-muted-foreground line-clamp-1 block">
-                                    {question.content}
-                                  </MathText>
-                                </div>
-                              </div>
-                            </TableCell>
-                            <TableCell>{getTypeBadge(question.type)}</TableCell>
-                            <TableCell>{getDifficultyBadge(question.difficulty)}</TableCell>
-                            <TableCell>{question.points}</TableCell>
-                            <TableCell>
-                              <div className="flex flex-wrap gap-1">
-                                {(question.tags || []).slice(0, 2).map((tag) => (
-                                  <Badge key={tag} variant="outline" className="text-xs">
-                                    {tag}
-                                  </Badge>
-                                ))}
-                                {(question.tags || []).length > 2 && (
-                                  <Badge variant="outline" className="text-xs">
-                                    +{(question.tags || []).length - 2}
-                                  </Badge>
-                                )}
-                              </div>
-                            </TableCell>
-                            <TableCell>
-                              <div className="flex items-center gap-1">
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-8 w-8"
-                                  onClick={() => setViewQ(question)}
-                                  title="View detail"
-                                >
-                                  <Eye className="h-4 w-4" />
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-8 w-8"
-                                  onClick={() => handleDuplicate(question)}
-                                  title="Duplicate"
-                                >
-                                  <Copy className="h-4 w-4" />
-                                </Button>
-                                <DropdownMenu>
-                                  <DropdownMenuTrigger asChild>
+                                </TableCell>
+                                <TableCell>
+                                  <div className="flex items-center gap-1">
                                     <Button
                                       variant="ghost"
                                       size="icon"
-                                      className="h-8 w-8 text-destructive hover:text-destructive"
-                                      title="More options"
+                                      className="h-8 w-8"
+                                      onClick={() => setViewQ(question)}
+                                      title="View detail"
                                     >
-                                      <MoreVertical className="h-4 w-4" />
+                                      <Eye className="h-4 w-4" />
                                     </Button>
-                                  </DropdownMenuTrigger>
-                                  <DropdownMenuContent align="end">
-                                    <DropdownMenuItem onClick={() => setViewQ(question)}>
-                                      <Eye className="w-4 h-4 mr-2" />
-                                      View
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem onClick={() => handleDuplicate(question)}>
-                                      <Copy className="w-4 h-4 mr-2" />
-                                      Duplicate
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem
-                                      className="text-destructive"
-                                      onClick={() => handleDelete(question.id)}
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-8 w-8"
+                                      onClick={() => handleDuplicate(question)}
+                                      title="Duplicate"
                                     >
-                                      <Trash2 className="w-4 h-4 mr-2" />
-                                      Delete
-                                    </DropdownMenuItem>
-                                  </DropdownMenuContent>
-                                </DropdownMenu>
-                              </div>
-                            </TableCell>
-                          </TableRow>
+                                      <Copy className="h-4 w-4" />
+                                    </Button>
+                                    <DropdownMenu>
+                                      <DropdownMenuTrigger asChild>
+                                        <Button
+                                          variant="ghost"
+                                          size="icon"
+                                          className="h-8 w-8 text-destructive hover:text-destructive"
+                                          title="More options"
+                                        >
+                                          <MoreVertical className="h-4 w-4" />
+                                        </Button>
+                                      </DropdownMenuTrigger>
+                                      <DropdownMenuContent align="end">
+                                        <DropdownMenuItem onClick={() => setViewQ(question)}>
+                                          <Eye className="w-4 h-4 mr-2" />
+                                          View
+                                        </DropdownMenuItem>
+                                        <DropdownMenuItem onClick={() => handleDuplicate(question)}>
+                                          <Copy className="w-4 h-4 mr-2" />
+                                          Duplicate
+                                        </DropdownMenuItem>
+                                        <DropdownMenuItem
+                                          className="text-destructive"
+                                          onClick={() => handleDelete(question.id)}
+                                        >
+                                          <Trash2 className="w-4 h-4 mr-2" />
+                                          Delete
+                                        </DropdownMenuItem>
+                                      </DropdownMenuContent>
+                                    </DropdownMenu>
+                                  </div>
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </Fragment>
                         ))}
                       </TableBody>
                     </Table>
-                  </div>
+                    </div>
+                  </>
                 )}
                 {!loading && filteredQuestions.length === 0 && (
                   <p className="text-center text-muted-foreground py-12 text-sm">Tidak ada soal.</p>
@@ -1010,6 +1221,9 @@ export default function QuestionBankPage() {
               }}
             >
               Batal
+            </Button>
+            <Button variant="outline" onClick={submitAndCreateExam} disabled={saving}>
+              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Simpan & Buat Ujian'}
             </Button>
             <Button onClick={submitNewQuestion} disabled={saving}>
               {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Simpan'}
@@ -1279,14 +1493,30 @@ export default function QuestionBankPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={bankDialogOpen} onOpenChange={setBankDialogOpen}>
+      <Dialog
+        open={bankDialogOpen}
+        onOpenChange={(open) => {
+          setBankDialogOpen(open);
+          if (!open) setBankSelectionIds(null);
+        }}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Bank soal baru</DialogTitle>
+            {bankSelectionIds && bankSelectionIds.length > 0 && (
+              <DialogDescription>
+                {bankSelectionIds.length} soal terpilih akan ditambahkan ke bank ini.
+              </DialogDescription>
+            )}
           </DialogHeader>
           <Input placeholder="Nama bank" value={newBankName} onChange={(e) => setNewBankName(e.target.value)} />
           <DialogFooter>
-            <Button onClick={createBank}>Buat</Button>
+            <Button variant="outline" onClick={() => setBankDialogOpen(false)}>
+              Batal
+            </Button>
+            <Button onClick={createBank} disabled={creatingBank}>
+              {creatingBank ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Buat'}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -17,7 +17,16 @@ import {
   Bell,
   Search,
   GraduationCap,
+  Menu,
+  X,
 } from 'lucide-react';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { UserAccountMenu } from '@/components/shared/user-account-menu';
@@ -44,6 +53,7 @@ export function TeacherNav({ userName, children }: TeacherNavProps) {
   const pathname = usePathname();
   const { user } = useAuth();
   const [sidebarHidden, setSidebarHidden] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const displayName = userName || user?.name || 'Teacher';
   void displayName;
@@ -196,34 +206,114 @@ export function TeacherNav({ userName, children }: TeacherNavProps) {
         )}
       </div>
 
-      {/* Mobile bottom navigation */}
+      {/* Mobile bottom navigation (4 Primary Tabs + 1 'Lainnya' Menu Sheet) */}
       <nav
-        className="fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-card/95 backdrop-blur-md md:hidden safe-area-pb"
-        aria-label="Primary"
+        className="fixed bottom-0 left-0 right-0 z-40 border-t border-border bg-card/95 backdrop-blur-md md:hidden safe-area-pb"
+        aria-label="Teacher Primary Navigation"
       >
-        <div className="scrollbar-none flex h-[4.25rem] items-stretch gap-0.5 overflow-x-auto px-2 py-1.5">
-          {navItems.map((item) => {
-            const Icon = item.icon;
-            const isActive =
-              pathname === item.href || (pathname?.startsWith(`${item.href}/`) ?? false);
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={cn(
-                  'flex min-w-[4.75rem] shrink-0 flex-col items-center justify-center gap-0.5 rounded-lg px-2 py-1 text-[10px] font-medium touch-manipulation',
-                  isActive ? 'bg-primary/10 text-primary' : 'text-muted-foreground active:bg-muted'
-                )}
-              >
-                <Icon className="h-5 w-5 shrink-0" />
-                <span className="max-w-[4.5rem] truncate text-center leading-tight">
-                  {shortMobileLabel(item.label)}
-                </span>
-              </Link>
-            );
-          })}
+        <div className="grid grid-cols-5 h-16 px-1">
+          <Link
+            href="/teacher/dashboard"
+            className={cn(
+              'flex flex-col items-center justify-center gap-1 py-1 text-[11px] font-medium touch-manipulation transition-colors',
+              pathname === '/teacher/dashboard' ? 'text-primary font-bold' : 'text-muted-foreground'
+            )}
+          >
+            <div className={cn('flex h-7 w-12 items-center justify-center rounded-full', pathname === '/teacher/dashboard' && 'bg-primary/15')}>
+              <LayoutDashboard className="h-5 w-5" />
+            </div>
+            <span className="truncate">Beranda</span>
+          </Link>
+
+          <Link
+            href="/teacher/exams"
+            className={cn(
+              'flex flex-col items-center justify-center gap-1 py-1 text-[11px] font-medium touch-manipulation transition-colors',
+              pathname.startsWith('/teacher/exams') ? 'text-primary font-bold' : 'text-muted-foreground'
+            )}
+          >
+            <div className={cn('flex h-7 w-12 items-center justify-center rounded-full', pathname.startsWith('/teacher/exams') && 'bg-primary/15')}>
+              <FileText className="h-5 w-5" />
+            </div>
+            <span className="truncate">Ujian</span>
+          </Link>
+
+          <Link
+            href="/teacher/questions"
+            className={cn(
+              'flex flex-col items-center justify-center gap-1 py-1 text-[11px] font-medium touch-manipulation transition-colors',
+              pathname.startsWith('/teacher/questions') ? 'text-primary font-bold' : 'text-muted-foreground'
+            )}
+          >
+            <div className={cn('flex h-7 w-12 items-center justify-center rounded-full', pathname.startsWith('/teacher/questions') && 'bg-primary/15')}>
+              <FolderKanban className="h-5 w-5" />
+            </div>
+            <span className="truncate">Bank Soal</span>
+          </Link>
+
+          <Link
+            href="/teacher/results"
+            className={cn(
+              'flex flex-col items-center justify-center gap-1 py-1 text-[11px] font-medium touch-manipulation transition-colors',
+              pathname.startsWith('/teacher/results') ? 'text-primary font-bold' : 'text-muted-foreground'
+            )}
+          >
+            <div className={cn('flex h-7 w-12 items-center justify-center rounded-full', pathname.startsWith('/teacher/results') && 'bg-primary/15')}>
+              <BarChart3 className="h-5 w-5" />
+            </div>
+            <span className="truncate">Hasil</span>
+          </Link>
+
+          <button
+            type="button"
+            onClick={() => setMobileMenuOpen(true)}
+            className="flex flex-col items-center justify-center gap-1 py-1 text-[11px] font-medium touch-manipulation text-muted-foreground active:scale-95"
+          >
+            <div className="flex h-7 w-12 items-center justify-center rounded-full">
+              <Menu className="h-5 w-5" />
+            </div>
+            <span className="truncate">Menu</span>
+          </button>
         </div>
       </nav>
+
+      {/* Mobile More Sheet / Dialog */}
+      <Dialog open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
+        <DialogContent className="max-w-md w-[92vw] sm:max-w-lg p-5 rounded-2xl">
+          <DialogHeader className="pb-3 border-b border-border">
+            <DialogTitle className="text-base font-semibold font-heading">Menu Fitur Guru</DialogTitle>
+            <DialogDescription className="text-xs">
+              Akses cepat ke alat AI, media, dan manajemen siswa.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid grid-cols-2 gap-2.5 py-2">
+            {navItems.map((item) => {
+              const Icon = item.icon;
+              const isActive =
+                pathname === item.href || (pathname?.startsWith(`${item.href}/`) ?? false);
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  onClick={() => setMobileMenuOpen(false)}
+                  className={cn(
+                    'flex items-center gap-3 p-3 rounded-xl border text-xs sm:text-sm font-medium transition-all active:scale-[0.98]',
+                    isActive
+                      ? 'border-primary bg-primary/10 text-primary font-semibold'
+                      : 'border-border bg-card hover:bg-muted/50 text-foreground'
+                  )}
+                >
+                  <div className={cn('p-2 rounded-lg', isActive ? 'bg-primary/20 text-primary' : 'bg-muted text-muted-foreground')}>
+                    <Icon className="h-4 w-4" />
+                  </div>
+                  <span className="truncate">{item.label}</span>
+                </Link>
+              );
+            })}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
