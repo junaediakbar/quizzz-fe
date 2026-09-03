@@ -70,6 +70,16 @@ export default function StudentDashboardPage() {
     return 'bg-red-500/10';
   };
 
+  const passedCount = recentResults.filter((r) => r.passed).length;
+  const passRate = totalTaken > 0 ? (passedCount / totalTaken) * 100 : 0;
+  const topScorerCount = recentResults.filter((r) => r.percentage >= 90).length;
+  let currentStreak = 0;
+  for (const r of recentResults) {
+    if (!r.passed) break;
+    currentStreak++;
+  }
+  const hasAchievements = topScorerCount > 0 || currentStreak >= 3;
+
   return (
     <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6 sm:space-y-8 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
         {loading && (
@@ -135,7 +145,7 @@ export default function StudentDashboardPage() {
               </div>
               <div className="mt-3 sm:mt-4">
                 <p className="text-xs sm:text-sm text-muted-foreground">Tingkat Lulus</p>
-                <p className="text-2xl sm:text-3xl font-bold mt-0.5 sm:mt-1">87%</p>
+                <p className="text-2xl sm:text-3xl font-bold mt-0.5 sm:mt-1">{formatPercent(passRate)}</p>
               </div>
             </CardContent>
           </Card>
@@ -267,33 +277,35 @@ export default function StudentDashboardPage() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-3">
-                  <div className="flex items-center gap-3 p-3 bg-yellow-500/10 rounded-lg">
-                    <div className="w-10 h-10 rounded-full bg-yellow-500/20 flex items-center justify-center">
-                      <Award className="w-5 h-5 text-yellow-600" />
+                  {topScorerCount > 0 && (
+                    <div className="flex items-center gap-3 p-3 bg-yellow-500/10 rounded-lg">
+                      <div className="w-10 h-10 rounded-full bg-yellow-500/20 flex items-center justify-center">
+                        <Award className="w-5 h-5 text-yellow-600" />
+                      </div>
+                      <div>
+                        <p className="font-medium text-sm">Top Performer</p>
+                        <p className="text-xs text-muted-foreground">
+                          Scored 90%+ on {topScorerCount} exam{topScorerCount > 1 ? 's' : ''}
+                        </p>
+                      </div>
                     </div>
-                    <div>
-                      <p className="font-medium text-sm">Top Performer</p>
-                      <p className="text-xs text-muted-foreground">Scored 90%+ on 3 exams</p>
+                  )}
+                  {currentStreak >= 3 && (
+                    <div className="flex items-center gap-3 p-3 bg-blue-500/10 rounded-lg">
+                      <div className="w-10 h-10 rounded-full bg-blue-500/20 flex items-center justify-center">
+                        <TrendingUp className="w-5 h-5 text-blue-600" />
+                      </div>
+                      <div>
+                        <p className="font-medium text-sm">On Fire!</p>
+                        <p className="text-xs text-muted-foreground">{currentStreak} exams in a row passed</p>
+                      </div>
                     </div>
-                  </div>
-                  <div className="flex items-center gap-3 p-3 bg-blue-500/10 rounded-lg">
-                    <div className="w-10 h-10 rounded-full bg-blue-500/20 flex items-center justify-center">
-                      <TrendingUp className="w-5 h-5 text-blue-600" />
-                    </div>
-                    <div>
-                      <p className="font-medium text-sm">On Fire!</p>
-                      <p className="text-xs text-muted-foreground">5 exams in a row passed</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3 p-3 bg-green-500/10 rounded-lg">
-                    <div className="w-10 h-10 rounded-full bg-green-500/20 flex items-center justify-center">
-                      <CheckCircle2 className="w-5 h-5 text-green-600" />
-                    </div>
-                    <div>
-                      <p className="font-medium text-sm">Early Bird</p>
-                      <p className="text-xs text-muted-foreground">Completed before deadline</p>
-                    </div>
-                  </div>
+                  )}
+                  {!hasAchievements && (
+                    <p className="text-sm text-muted-foreground text-center py-4">
+                      Belum ada achievement. Terus kerjakan ujian!
+                    </p>
+                  )}
                 </div>
               </CardContent>
             </Card>
