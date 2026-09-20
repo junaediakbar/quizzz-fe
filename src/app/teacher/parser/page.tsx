@@ -268,6 +268,31 @@ c) 25 : 25
 d) 25 – 25
 Correct answer: b`;
 
+  /** Contoh notasi matematika: inline `$…$`, display `$$…$$` — dirender KaTeX di preview & hasil parse. */
+  const sampleTextWithMath = `1. Nilai dari $\\sqrt{48} + 3^2$ adalah ....
+a) $4\\sqrt{3} + 9$
+b) $4\\sqrt{3} + 6$
+c) $2\\sqrt{12} + 9$
+d) $16\\sqrt{3} + 9$
+Correct answer: a
+
+2. Hasil dari $\\frac{2}{3} + \\frac{1}{4}$ adalah ....
+a) $\\frac{3}{7}$
+b) $\\frac{5}{12}$
+c) $\\frac{11}{12}$
+d) $\\frac{3}{12}$
+Correct answer: c
+
+3. Akar-akar persamaan $$x^2 - 5x + 6 = 0$$ adalah ....
+a) $x = 1$ atau $x = 6$
+b) $x = 2$ atau $x = 3$
+c) $x = -2$ atau $x = -3$
+d) $x = 5$ atau $x = 6$
+Correct answer: b
+
+4. Tentukan turunan pertama dari $f(x) = 3x^2 - 4x + 7$.
+Correct answer: $f'(x) = 6x - 4$`;
+
   const readFileAsDataURL = useCallback((file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
       const r = new FileReader();
@@ -802,6 +827,20 @@ Correct answer: b`;
                           }}
                         >
                           Contoh + upload gambar
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          type="button"
+                          onClick={() => {
+                            setInputText(sampleTextWithMath);
+                            toast.message('Contoh notasi matematika dimuat', {
+                              description:
+                                'LaTeX inline $…$ dan display $$…$$ — akar, pecahan, pangkat, turunan. Lalu Parse.',
+                            });
+                          }}
+                        >
+                          Contoh notasi matematika
                         </Button>
                       </div>
                     </TabsContent>
