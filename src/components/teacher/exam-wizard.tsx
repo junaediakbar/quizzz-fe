@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -33,7 +33,6 @@ import {
   Search,
   GripVertical,
   Trash2,
-  Eye,
   Check,
   ChevronRight,
   ChevronLeft,
@@ -42,6 +41,7 @@ import {
   ArrowUpDown,
   Loader2,
   Shield,
+  Layers,
 } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { QuestionStemWithImages } from '@/components/shared/question-image-display';
@@ -52,13 +52,47 @@ import { formatMaxViolationsLabel } from '@/lib/exam-security';
 import { TeacherNav } from '@/components/shared/teacher-nav';
 import { useAuth } from '@/contexts/AuthContext';
 import { questionsApi } from '@/lib/api/questions';
-import { examsApi } from '@/lib/api/exams';
+import { examsApi, type ExamPartRequest } from '@/lib/api/exams';
 import { toast } from 'sonner';
 
 type WizardStep = 'details' | 'questions' | 'settings' | 'review';
 
+/**
+ * Bagian (part) ujian di sisi editor. Ujian selalu punya minimal satu bagian;
+ * bila judulnya kosong dan hanya ada satu bagian, ujian dikirim tanpa bagian.
+ */
+interface WizardPart {
+  id: string;
+  title: string;
+  description: string;
+  /** > 0 = timpa poin bank soal untuk semua soal di bagian ini */
+  pointsPerQuestion: number;
+  questions: Question[];
+}
+
 interface ExamWizardProps {
   examId?: string;
+}
+
+function newPartId(): string {
+  return typeof crypto !== 'undefined' && crypto.randomUUID
+    ? crypto.randomUUID()
+    : `part-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function emptyPart(title = ''): WizardPart {
+  return {
+    id: newPartId(),
+    title,
+    description: '',
+    pointsPerQuestion: 0,
+    questions: [],
+  };
+}
+
+/** Poin efektif sebuah soal di ujian ini (menghormati override poin per bagian). */
+function pointsFor(part: WizardPart, q: Question): number {
+  return part.pointsPerQuestion > 0 ? part.pointsPerQuestion : q.points;
 }
 
 export function ExamWizard({ examId }: ExamWizardProps) {
@@ -75,9 +109,11 @@ export function ExamWizard({ examId }: ExamWizardProps) {
   const [examDescription, setExamDescription] = useState('');
   const [subject, setSubject] = useState('');
   const [grade, setGrade] = useState('');
-  const [selectedQuestions, setSelectedQuestions] = useState<Question[]>([]);
+  const [parts, setParts] = useState<WizardPart[]>([emptyPart()]);
   const [isQuestionDialogOpen, setIsQuestionDialogOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  /** Bagian tujuan saat menambah soal dari dialog */
+  const [targetPartId, setTargetPartId] = useState<string>('');
 
   const [examConfig, setExamConfig] = useState<ExamConfig>({
     duration: 60,
@@ -103,6 +139,54 @@ export function ExamWizard({ examId }: ExamWizardProps) {
 
   const stepIndex = steps.findIndex(s => s.id === currentStep);
   const progress = ((stepIndex + 1) / steps.length) * 100;
+
+  /** Base UI mencetak nilai mentah tanpa `items`; lihat catatan di select.tsx usage. */
+  const partItems = useMemo(
+    () =>
+      Object.fromEntries(
+        parts.map((p, i) => [
+          p.id,
+          p.title.trim() || `Bagian ${String.fromCharCode(65 + (i % 26))}`,
+        ])
+      ),
+    [parts]
+  );
+  const gradeItems = useMemo(
+    () => Object.fromEntries(GRADE_OPTIONS.map((g) => [g.value, g.label])),
+    []
+  );
+  const attemptItems = useMemo(
+    () => ({ '1': '1 attempt', '2': '2 attempts', '3': '3 attempts', '0': 'Unlimited' }),
+    []
+  );
+  const showResultsItems = useMemo(
+    () => ({
+      immediate: 'Immediately after submission',
+      'after-review': 'After teacher review',
+      manual: 'Manual release',
+    }),
+    []
+  );
+  const maxViolationsItems = useMemo(
+    () => ({
+      '0': 'Tidak mengunci otomatis (hanya peringatan)',
+      '1': '1 pelanggaran → sesi berakhir',
+      '2': '2 pelanggaran → sesi berakhir',
+      '3': '3 pelanggaran → sesi berakhir',
+      '5': '5 pelanggaran → sesi berakhir',
+      '10': '10 pelanggaran → sesi berakhir',
+    }),
+    []
+  );
+
+  const selectedQuestions = useMemo(
+    () => parts.flatMap((p) => p.questions),
+    [parts]
+  );
+  const totalPoints = useMemo(
+    () => parts.reduce((sum, p) => sum + p.questions.reduce((s, q) => s + pointsFor(p, q), 0), 0),
+    [parts]
+  );
 
   const loadBank = useCallback(async () => {
     if (!user?.id || (user.role !== 'teacher' && user.role !== 'admin')) {
@@ -145,9 +229,10 @@ export function ExamWizard({ examId }: ExamWizardProps) {
       .map((id) => bankQuestions.find((q) => q.id === id))
       .filter((q): q is Question => !!q);
     if (matched.length) {
-      setSelectedQuestions((prev) => {
-        const existing = new Set(prev.map((q) => q.id));
-        return [...prev, ...matched.filter((q) => !existing.has(q.id))];
+      setParts((prev) => {
+        const next = prev.length ? [...prev] : [emptyPart()];
+        next[0] = { ...next[0], questions: [...next[0].questions, ...matched] };
+        return next;
       });
       preselectApplied.current = true;
     }
@@ -165,8 +250,31 @@ export function ExamWizard({ examId }: ExamWizardProps) {
         setExamDescription(exam.description ?? '');
         setSubject(exam.subject);
         setGrade(exam.grade);
-        setSelectedQuestions(exam.questions);
         setExamConfig(exam.config);
+
+        // Kelompokkan soal ke bagiannya; ujian tanpa parts → satu bagian implisit.
+        const examParts = exam.parts ?? [];
+        if (examParts.length === 0) {
+          setParts([{ ...emptyPart(), questions: exam.questions }]);
+        } else {
+          const grouped: WizardPart[] = examParts
+            .slice()
+            .sort((a, b) => a.orderIndex - b.orderIndex)
+            .map((p) => ({
+              id: p.id,
+              title: p.title,
+              description: p.description ?? '',
+              pointsPerQuestion: 0,
+              questions: exam.questions.filter((q) => q.partId === p.id),
+            }));
+          const orphans = exam.questions.filter(
+            (q) => !q.partId || !examParts.some((p) => p.id === q.partId)
+          );
+          if (orphans.length > 0) {
+            grouped.push({ ...emptyPart('Tanpa bagian'), questions: orphans });
+          }
+          setParts(grouped.length > 0 ? grouped : [emptyPart()]);
+        }
       } catch (e) {
         if (!cancelled) {
           toast.error(e instanceof Error ? e.message : 'Gagal memuat ujian');
@@ -187,36 +295,90 @@ export function ExamWizard({ examId }: ExamWizardProps) {
       q.content.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const totalPoints = selectedQuestions.reduce((sum, q) => sum + q.points, 0);
+  const isQuestionSelected = (id: string) =>
+    parts.some((p) => p.questions.some((q) => q.id === id));
+
+  /** Bagian tujuan dialog: pilihan user, atau bagian terakhir. */
+  const dialogTargetPart =
+    parts.find((p) => p.id === targetPartId) ?? parts[parts.length - 1] ?? parts[0];
 
   const toggleQuestion = (question: Question) => {
-    setSelectedQuestions(prev => {
-      const exists = prev.find(q => q.id === question.id);
-      if (exists) {
-        return prev.filter(q => q.id !== question.id);
-      }
-      return [...prev, question];
-    });
+    if (isQuestionSelected(question.id)) {
+      setParts((prev) =>
+        prev.map((p) => ({
+          ...p,
+          questions: p.questions.filter((q) => q.id !== question.id),
+        }))
+      );
+      return;
+    }
+    const partId = dialogTargetPart?.id;
+    setParts((prev) =>
+      prev.map((p) => (p.id === partId ? { ...p, questions: [...p.questions, question] } : p))
+    );
   };
 
   const removeQuestion = (id: string) => {
-    setSelectedQuestions((prev) => prev.filter((q) => q.id !== id));
+    setParts((prev) =>
+      prev.map((p) => ({ ...p, questions: p.questions.filter((q) => q.id !== id) }))
+    );
   };
 
-  const moveQuestion = (id: string, dir: -1 | 1) => {
-    setSelectedQuestions((prev) => {
-      const i = prev.findIndex((q) => q.id === id);
-      if (i < 0) return prev;
-      const j = i + dir;
-      if (j < 0 || j >= prev.length) return prev;
-      const next = [...prev];
-      [next[i], next[j]] = [next[j], next[i]];
-      return next;
+  const moveQuestion = (partId: string, id: string, dir: -1 | 1) => {
+    setParts((prev) =>
+      prev.map((p) => {
+        if (p.id !== partId) return p;
+        const i = p.questions.findIndex((q) => q.id === id);
+        if (i < 0) return p;
+        const j = i + dir;
+        if (j < 0 || j >= p.questions.length) return p;
+        const next = [...p.questions];
+        [next[i], next[j]] = [next[j], next[i]];
+        return { ...p, questions: next };
+      })
+    );
+  };
+
+  const moveQuestionToPart = (fromPartId: string, questionId: string, toPartId: string) => {
+    if (fromPartId === toPartId) return;
+    setParts((prev) => {
+      const src = prev.find((p) => p.id === fromPartId);
+      const question = src?.questions.find((q) => q.id === questionId);
+      if (!question) return prev;
+      return prev.map((p) => {
+        if (p.id === fromPartId) {
+          return { ...p, questions: p.questions.filter((q) => q.id !== questionId) };
+        }
+        if (p.id === toPartId) {
+          return { ...p, questions: [...p.questions, question] };
+        }
+        return p;
+      });
     });
   };
 
   const reverseQuestionOrder = () => {
-    setSelectedQuestions((prev) => [...prev].reverse());
+    setParts((prev) => prev.map((p) => ({ ...p, questions: [...p.questions].reverse() })));
+  };
+
+  const addPart = (title = '') => {
+    const p = emptyPart(title);
+    setParts((prev) => [...prev, p]);
+    setTargetPartId(p.id);
+  };
+
+  const removePart = (partId: string) => {
+    setParts((prev) => {
+      if (prev.length <= 1) {
+        // Jangan hapus bagian terakhir — kosongkan saja.
+        return prev.map((p) => (p.id === partId ? { ...p, questions: [], title: '' } : p));
+      }
+      return prev.filter((p) => p.id !== partId);
+    });
+  };
+
+  const updatePart = (partId: string, patch: Partial<WizardPart>) => {
+    setParts((prev) => prev.map((p) => (p.id === partId ? { ...p, ...patch } : p)));
   };
 
   const nextStep = () => {
@@ -230,6 +392,20 @@ export function ExamWizard({ examId }: ExamWizardProps) {
       setCurrentStep(steps[stepIndex - 1].id);
     }
   };
+
+  /** Bagian yang benar-benar dipakai (ada soal). */
+  const usedParts = parts.filter((p) => p.questions.length > 0);
+  /** Ujian dianggap "punya bagian" bila >1 bagian berisi soal atau judulnya diisi. */
+  const hasNamedParts =
+    usedParts.length > 1 || (usedParts.length === 1 && usedParts[0].title.trim() !== '');
+
+  const buildPartsPayload = (): ExamPartRequest[] =>
+    usedParts.map((p, i) => ({
+      title: p.title.trim() || `Bagian ${i + 1}`,
+      description: p.description.trim() || undefined,
+      question_ids: p.questions.map((q) => q.id),
+      ...(p.pointsPerQuestion > 0 ? { points_per_question: p.pointsPerQuestion } : {}),
+    }));
 
   const handleSubmit = async () => {
     if (!examTitle.trim() || !subject.trim() || !grade.trim()) {
@@ -248,7 +424,9 @@ export function ExamWizard({ examId }: ExamWizardProps) {
         subject: subject.trim(),
         grade: grade.trim(),
         config: examConfig,
-        question_ids: selectedQuestions.map((q) => q.id),
+        ...(hasNamedParts
+          ? { parts: buildPartsPayload() }
+          : { question_ids: selectedQuestions.map((q) => q.id) }),
       };
       if (isEdit && examId) {
         await examsApi.update(examId, payload);
@@ -272,6 +450,9 @@ export function ExamWizard({ examId }: ExamWizardProps) {
       'multiple-choice': { label: 'MCQ', className: 'bg-blue-500/10 text-blue-500' },
       'true-false': { label: 'T/F', className: 'bg-green-500/10 text-green-500' },
       'short-answer': { label: 'Short', className: 'bg-purple-500/10 text-purple-500' },
+      essay: { label: 'Essay', className: 'bg-orange-500/10 text-orange-500' },
+      matching: { label: 'Match', className: 'bg-pink-500/10 text-pink-500' },
+      'fill-blank': { label: 'Fill', className: 'bg-cyan-500/10 text-cyan-500' },
     };
     const variant = variants[type] || variants['multiple-choice'];
     return <Badge className={variant.className}>{variant.label}</Badge>;
@@ -393,24 +574,32 @@ export function ExamWizard({ examId }: ExamWizardProps) {
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label htmlFor="subject">Subject *</Label>
-                      <Select value={subject} onValueChange={(value) => setSubject(value ?? '')}>
-                        <SelectTrigger id="subject">
-                          <SelectValue placeholder="Select subject" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="math">Mathematics</SelectItem>
-                          <SelectItem value="biology">Biology</SelectItem>
-                          <SelectItem value="chemistry">Chemistry</SelectItem>
-                          <SelectItem value="physics">Physics</SelectItem>
-                          <SelectItem value="english">English</SelectItem>
-                          <SelectItem value="history">History</SelectItem>
-                        </SelectContent>
-                      </Select>
+                      <Input
+                        id="subject"
+                        list="exam-subject-options"
+                        placeholder="Matematika / IPAS / …"
+                        value={subject}
+                        onChange={(e) => setSubject(e.target.value)}
+                      />
+                      <datalist id="exam-subject-options">
+                        <option value="Matematika" />
+                        <option value="IPAS" />
+                        <option value="Bahasa Indonesia" />
+                        <option value="IPA" />
+                        <option value="IPS" />
+                        <option value="PPKn" />
+                        <option value="Bahasa Inggris" />
+                        <option value="Mathematics" />
+                        <option value="Biology" />
+                        <option value="Physics" />
+                        <option value="Chemistry" />
+                        <option value="History" />
+                      </datalist>
                     </div>
 
                     <div className="space-y-2">
                       <Label htmlFor="grade">Kelas *</Label>
-                      <Select value={grade} onValueChange={(value) => setGrade(value ?? '')}>
+                      <Select items={gradeItems} value={grade} onValueChange={(value) => setGrade(value ?? '')}>
                         <SelectTrigger id="grade">
                           <SelectValue placeholder="Pilih kelas (1–12)" />
                         </SelectTrigger>
@@ -431,12 +620,12 @@ export function ExamWizard({ examId }: ExamWizardProps) {
             {currentStep === 'questions' && (
               <Card>
                 <CardHeader>
-                  <div className="flex items-center justify-between">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
                       <CardTitle>Add Questions</CardTitle>
                       <CardDescription>
-                        {selectedQuestions.length} soal dipilih • {totalPoints} poin • urutan Q1→Q
-                        {selectedQuestions.length} sesuai daftar (bisa diubah)
+                        {selectedQuestions.length} soal dipilih • {totalPoints} poin •{' '}
+                        {usedParts.length > 1 ? `${usedParts.length} bagian soal` : 'tanpa bagian'} (urutan bisa diubah)
                       </CardDescription>
                     </div>
                     <div className="flex flex-wrap gap-2">
@@ -452,87 +641,185 @@ export function ExamWizard({ examId }: ExamWizardProps) {
                           Balik urutan
                         </Button>
                       )}
-                      <Button onClick={() => setIsQuestionDialogOpen(true)} className="gap-2">
+                      <Button type="button" variant="outline" size="sm" onClick={() => addPart()} className="gap-2">
+                        <Layers className="w-4 h-4" />
+                        Tambah bagian
+                      </Button>
+                      <Button
+                        onClick={() => {
+                          setTargetPartId(parts[parts.length - 1]?.id ?? '');
+                          setIsQuestionDialogOpen(true);
+                        }}
+                        className="gap-2"
+                      >
                         <Plus className="w-4 h-4" />
                         Add Questions
                       </Button>
                     </div>
                   </div>
                 </CardHeader>
-                <CardContent>
-                  {selectedQuestions.length === 0 ? (
-                    <div className="text-center py-12">
-                      <FileText className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
-                      <p className="text-muted-foreground">No questions added yet</p>
-                      <Button
-                        variant="outline"
-                        className="mt-4"
-                        onClick={() => setIsQuestionDialogOpen(true)}
-                      >
-                        <Plus className="w-4 h-4 mr-2" />
-                        Add Your First Question
-                      </Button>
-                    </div>
-                  ) : (
-                    <div className="space-y-3">
-                      {selectedQuestions.map((question, index) => (
-                        <div
-                          key={question.id}
-                          className="flex items-start gap-4 p-4 border rounded-lg hover:bg-muted/50"
-                        >
-                          <div className="flex items-center gap-2">
-                            <GripVertical className="w-5 h-5 text-muted-foreground cursor-grab" />
-                            <Badge variant="outline">Q{index + 1}</Badge>
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-1">
-                              <h4 className="font-medium">{question.title}</h4>
-                              {getTypeBadge(question.type)}
-                              <Badge variant="outline" className="capitalize">
-                                {question.difficulty}
-                              </Badge>
-                              <Badge variant="outline">{question.points} pts</Badge>
-                            </div>
-                            <MathText className="text-sm text-muted-foreground truncate block">
-                              {question.content}
-                            </MathText>
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8"
-                              title="Naik"
-                              disabled={index === 0}
-                              onClick={() => moveQuestion(question.id, -1)}
-                            >
-                              <ChevronUp className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8"
-                              title="Turun"
-                              disabled={index === selectedQuestions.length - 1}
-                              onClick={() => moveQuestion(question.id, 1)}
-                            >
-                              <ChevronDown className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8"
-                              onClick={() => removeQuestion(question.id)}
-                              title="Hapus dari ujian"
-                            >
-                              <Trash2 className="h-4 w-4 text-destructive" />
-                            </Button>
-                          </div>
+                <CardContent className="space-y-5">
+                  <p className="text-xs text-muted-foreground">
+                    Bagi ujian menjadi beberapa bagian (mis. <strong>Bagian A — Pilihan Ganda</strong>,{' '}
+                    <strong>Bagian B — Uraian</strong>). Setiap bagian bisa punya instruksi sendiri dan poin
+                    per soal tersendiri. Biarkan judul bagian kosong bila ujian tidak perlu dibagi.
+                  </p>
+
+                  {parts.map((part, partIndex) => (
+                    <div key={part.id} className="rounded-xl border border-border p-4 space-y-4">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="flex items-center gap-2">
+                          <Layers className="h-4 w-4 text-primary" />
+                          <span className="text-sm font-semibold">
+                            Bagian {String.fromCharCode(65 + (partIndex % 26))}
+                          </span>
+                          <Badge variant="outline">{part.questions.length} soal</Badge>
+                          <Badge variant="outline">
+                            {part.questions.reduce((s, q) => s + pointsFor(part, q), 0)} poin
+                          </Badge>
                         </div>
-                      ))}
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="text-destructive hover:text-destructive"
+                          onClick={() => removePart(part.id)}
+                          disabled={parts.length === 1 && part.questions.length === 0}
+                          title="Hapus bagian"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+
+                      <div className="grid gap-3 sm:grid-cols-[2fr_1fr]">
+                        <div className="space-y-1">
+                          <Label className="text-xs">Judul bagian (opsional)</Label>
+                          <Input
+                            value={part.title}
+                            placeholder={`Bagian ${String.fromCharCode(65 + (partIndex % 26))} — Pilihan Ganda`}
+                            onChange={(e) => updatePart(part.id, { title: e.target.value })}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs">Poin per soal (opsional)</Label>
+                          <Input
+                            type="number"
+                            min={0}
+                            value={part.pointsPerQuestion || ''}
+                            placeholder="Poin bank soal"
+                            onChange={(e) =>
+                              updatePart(part.id, {
+                                pointsPerQuestion: Math.max(0, Number(e.target.value) || 0),
+                              })
+                            }
+                          />
+                        </div>
+                      </div>
+
+                      <div className="space-y-1">
+                        <Label className="text-xs">Instruksi bagian (opsional)</Label>
+                        <Input
+                          value={part.description}
+                          placeholder="Pilihlah jawaban yang paling tepat!"
+                          onChange={(e) => updatePart(part.id, { description: e.target.value })}
+                        />
+                      </div>
+
+                      {part.questions.length === 0 ? (
+                        <p className="rounded-lg border border-dashed border-border p-4 text-center text-sm text-muted-foreground">
+                          Belum ada soal di bagian ini.
+                        </p>
+                      ) : (
+                        <div className="space-y-2">
+                          {part.questions.map((question, index) => (
+                            <div
+                              key={question.id}
+                              className="flex items-start gap-3 rounded-lg border p-3 hover:bg-muted/50"
+                            >
+                              <div className="flex items-center gap-2 pt-0.5">
+                                <GripVertical className="w-4 h-4 text-muted-foreground" />
+                                <Badge variant="outline">Q{index + 1}</Badge>
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex flex-wrap items-center gap-2 mb-1">
+                                  <h4 className="font-medium truncate">{question.title}</h4>
+                                  {getTypeBadge(question.type)}
+                                  <Badge variant="outline" className="capitalize">
+                                    {question.difficulty}
+                                  </Badge>
+                                  <Badge variant="outline">
+                                    {pointsFor(part, question)} pts
+                                  </Badge>
+                                </div>
+                                <MathText className="text-sm text-muted-foreground truncate block">
+                                  {question.content}
+                                </MathText>
+                              </div>
+                              <div className="flex flex-wrap items-center justify-end gap-1">
+                                {parts.length > 1 && (
+                                  <Select
+                                    items={partItems}
+                                    value={part.id}
+                                    onValueChange={(v) =>
+                                      moveQuestionToPart(part.id, question.id, String(v))
+                                    }
+                                  >
+                                    <SelectTrigger className="h-8 w-[130px] text-xs">
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {parts.map((p, i) => (
+                                        <SelectItem key={p.id} value={p.id}>
+                                          {p.title.trim() || `Bagian ${String.fromCharCode(65 + (i % 26))}`}
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                )}
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8"
+                                  title="Naik"
+                                  disabled={index === 0}
+                                  onClick={() => moveQuestion(part.id, question.id, -1)}
+                                >
+                                  <ChevronUp className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8"
+                                  title="Turun"
+                                  disabled={index === part.questions.length - 1}
+                                  onClick={() => moveQuestion(part.id, question.id, 1)}
+                                >
+                                  <ChevronDown className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8"
+                                  onClick={() => removeQuestion(question.id)}
+                                  title="Hapus dari ujian"
+                                >
+                                  <Trash2 className="h-4 w-4 text-destructive" />
+                                </Button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+
+                  {selectedQuestions.length === 0 && (
+                    <div className="text-center py-8">
+                      <FileText className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
+                      <p className="text-muted-foreground">Belum ada soal di ujian ini</p>
                     </div>
                   )}
                 </CardContent>
@@ -560,8 +847,11 @@ export function ExamWizard({ examId }: ExamWizardProps) {
                     <div className="space-y-2">
                       <Label htmlFor="attempts">Max Attempts</Label>
                       <Select
-                        value={examConfig.maxAttempts.toString()}
-                        onValueChange={(v) => setExamConfig({ ...examConfig, maxAttempts: parseInt(v ?? '1') })}
+                        items={attemptItems}
+                        value={String(examConfig.maxAttempts)}
+                        onValueChange={(v) =>
+                          setExamConfig({ ...examConfig, maxAttempts: Number(v ?? '1') || 0 })
+                        }
                       >
                         <SelectTrigger id="attempts">
                           <SelectValue />
@@ -570,9 +860,12 @@ export function ExamWizard({ examId }: ExamWizardProps) {
                           <SelectItem value="1">1 attempt</SelectItem>
                           <SelectItem value="2">2 attempts</SelectItem>
                           <SelectItem value="3">3 attempts</SelectItem>
-                          <SelectItem value="unlimited">Unlimited</SelectItem>
+                          <SelectItem value="0">Unlimited</SelectItem>
                         </SelectContent>
                       </Select>
+                      <p className="text-xs text-muted-foreground">
+                        &ldquo;Unlimited&rdquo; = murid boleh mengulang ujian tanpa batas.
+                      </p>
                     </div>
 
                     <div className="space-y-2">
@@ -590,6 +883,7 @@ export function ExamWizard({ examId }: ExamWizardProps) {
                     <div className="space-y-2">
                       <Label htmlFor="showResults">Show Results</Label>
                       <Select
+                        items={showResultsItems}
                         value={examConfig.showResults}
                         onValueChange={(v) => setExamConfig({ ...examConfig, showResults: (v ?? 'after-review') as 'immediate' | 'after-review' | 'manual' })}
                       >
@@ -613,7 +907,9 @@ export function ExamWizard({ examId }: ExamWizardProps) {
                       <div className="flex items-center justify-between">
                         <div>
                           <p className="font-medium">Shuffle Questions</p>
-                          <p className="text-sm text-muted-foreground">Randomize question order for each student</p>
+                          <p className="text-sm text-muted-foreground">
+                            Randomize question order (soal diacak di dalam bagiannya)
+                          </p>
                         </div>
                         <Checkbox
                           checked={examConfig.shuffleQuestions}
@@ -682,6 +978,7 @@ export function ExamWizard({ examId }: ExamWizardProps) {
                         <div className="space-y-2">
                           <Label htmlFor="maxViolations">Toleransi pelanggaran</Label>
                           <Select
+                            items={maxViolationsItems}
                             value={String(examConfig.maxViolations)}
                             onValueChange={(v) =>
                               setExamConfig({
@@ -806,6 +1103,12 @@ export function ExamWizard({ examId }: ExamWizardProps) {
                           <dd className="font-medium">{examConfig.passingScore}%</dd>
                         </div>
                         <div className="flex justify-between">
+                          <dt className="text-muted-foreground">Max Attempts:</dt>
+                          <dd className="font-medium">
+                            {examConfig.maxAttempts > 0 ? examConfig.maxAttempts : 'Unlimited'}
+                          </dd>
+                        </div>
+                        <div className="flex justify-between">
                           <dt className="text-muted-foreground">Keamanan:</dt>
                           <dd className="font-medium text-right">
                             {examConfig.securityEnabled
@@ -821,32 +1124,48 @@ export function ExamWizard({ examId }: ExamWizardProps) {
 
                   <div>
                     <h3 className="font-medium mb-3">Questions Preview</h3>
-                    <div className="space-y-3 max-h-64 overflow-y-auto">
-                      {selectedQuestions.map((q, i) => (
-                        <div key={q.id} className="p-3 bg-muted/50 rounded-lg text-sm">
-                          <div className="flex items-center gap-3 mb-2">
-                            <Badge variant="outline">Q{i + 1}</Badge>
-                            <MathText className="font-medium">{q.title}</MathText>
-                            <Badge variant="secondary" className="ml-auto">{q.points} pts</Badge>
-                          </div>
-                          <QuestionStemWithImages
-                            content={q.content}
-                            images={q.images}
-                            imageUrls={q.imageUrls}
-                            contentClassName="text-muted-foreground mb-2"
-                          />
-                          {q.type === 'multiple-choice' && q.options && q.options.length > 0 && (
-                            <div className="grid grid-cols-2 gap-1 ml-1">
-                              {q.options.map((opt, optIdx) => (
-                                <div key={optIdx} className="flex items-center gap-2 text-xs">
-                                  <span className="text-muted-foreground shrink-0">
-                                    {String.fromCharCode(65 + optIdx)}.
-                                  </span>
-                                  <MathText className="min-w-0">{opt}</MathText>
-                                </div>
-                              ))}
+                    <div className="space-y-4 max-h-72 overflow-y-auto">
+                      {usedParts.map((part, pi) => (
+                        <div key={part.id} className="space-y-3">
+                          {usedParts.length > 1 || part.title.trim() ? (
+                            <div className="rounded-lg bg-primary/5 px-3 py-2">
+                              <p className="text-sm font-semibold">
+                                {part.title.trim() || `Bagian ${pi + 1}`}
+                              </p>
+                              {part.description.trim() ? (
+                                <p className="text-xs text-muted-foreground">{part.description}</p>
+                              ) : null}
                             </div>
-                          )}
+                          ) : null}
+                          {part.questions.map((q, i) => (
+                            <div key={q.id} className="p-3 bg-muted/50 rounded-lg text-sm">
+                              <div className="flex items-center gap-3 mb-2">
+                                <Badge variant="outline">Q{i + 1}</Badge>
+                                <MathText className="font-medium">{q.title}</MathText>
+                                <Badge variant="secondary" className="ml-auto">
+                                  {pointsFor(part, q)} pts
+                                </Badge>
+                              </div>
+                              <QuestionStemWithImages
+                                content={q.content}
+                                images={q.images}
+                                imageUrls={q.imageUrls}
+                                contentClassName="text-muted-foreground mb-2"
+                              />
+                              {q.type === 'multiple-choice' && q.options && q.options.length > 0 && (
+                                <div className="grid grid-cols-2 gap-1 ml-1">
+                                  {q.options.map((opt, optIdx) => (
+                                    <div key={optIdx} className="flex items-center gap-2 text-xs">
+                                      <span className="text-muted-foreground shrink-0">
+                                        {String.fromCharCode(65 + optIdx)}.
+                                      </span>
+                                      <MathText className="min-w-0">{opt}</MathText>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          ))}
                         </div>
                       ))}
                     </div>
@@ -891,8 +1210,8 @@ export function ExamWizard({ examId }: ExamWizardProps) {
           </DialogHeader>
 
           <div className="flex-1 overflow-hidden flex flex-col">
-            <div className="flex items-center gap-4 mb-4">
-              <div className="relative flex-1">
+            <div className="flex flex-wrap items-center gap-4 mb-4">
+              <div className="relative flex-1 min-w-[200px]">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                 <Input
                   placeholder="Search questions..."
@@ -900,6 +1219,25 @@ export function ExamWizard({ examId }: ExamWizardProps) {
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="pl-10"
                 />
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-muted-foreground whitespace-nowrap">Tambah ke:</span>
+                <Select
+                  items={partItems}
+                  value={dialogTargetPart?.id ?? ''}
+                  onValueChange={(v) => setTargetPartId(String(v))}
+                >
+                  <SelectTrigger className="w-[190px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {parts.map((p, i) => (
+                      <SelectItem key={p.id} value={p.id}>
+                        {p.title.trim() || `Bagian ${String.fromCharCode(65 + (i % 26))}`}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
 
@@ -911,7 +1249,7 @@ export function ExamWizard({ examId }: ExamWizardProps) {
               ) : (
                 <>
                   {availableQuestions.map((question) => {
-                    const isSelected = selectedQuestions.some((q) => q.id === question.id);
+                    const isSelected = isQuestionSelected(question.id);
                     return (
                       <div
                         key={question.id}

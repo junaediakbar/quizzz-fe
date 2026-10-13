@@ -49,6 +49,8 @@ import {
 import { cn, formatDurationMinutes, formatPercent } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
 import { examsApi, resultsApi } from '@/lib/api';
+import { ResultGradingDialog } from '@/components/teacher/result-grading-dialog';
+import { DataPagination, DEFAULT_PAGE_SIZE } from '@/components/shared/data-pagination';
 import { Exam, ExamResult } from '@/lib/types';
 import { toast } from 'sonner';
 
@@ -83,13 +85,22 @@ export default function TeacherResultsPage() {
   const [deleting, setDeleting] = useState<ExamResult | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  /** Dialog periksa & nilai jawaban (manual grading) */
+  const [gradingId, setGradingId] = useState<string | null>(null);
+  const [gradingOpen, setGradingOpen] = useState(false);
 
+  /**
+   * Analitik (rata-rata, sebaran nilai, statistik per soal) butuh SELURUH baris
+   * yang cocok dengan filter, jadi daftar diambil penuh lalu tabelnya dipotong
+   * per halaman di klien. Endpoint /results sendiri sudah mendukung limit/offset
+   * bila nanti perlu dipindah ke server.
+   */
   const fetchData = useCallback(async () => {
-    const [resList, examList] = await Promise.all([
+    const [resPage, examList] = await Promise.all([
       resultsApi.list(),
       examsApi.list({ limit: 200 }),
     ]);
-    setResults(resList);
+    setResults(resPage.results);
     setExams(examList.exams);
   }, []);
 
@@ -109,6 +120,18 @@ export default function TeacherResultsPage() {
   useEffect(() => {
     if (!authLoading && user?.id) void load();
   }, [authLoading, user?.id, load]);
+
+  /** Pagination tabel hasil (1-based). */
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
+
+  // Dukungan tautan langsung ?exam=<id> (mis. dari halaman admin "Hasil").
+  // Dibaca dari window agar halaman tetap bisa di-prerender statis.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const examParam = new URLSearchParams(window.location.search).get('exam');
+    if (examParam) setSelectedExam(examParam);
+  }, []);
 
   const openDelete = (result: ExamResult) => {
     setDeleting(result);
@@ -146,6 +169,12 @@ export default function TeacherResultsPage() {
       return matchesExam && matchesPass && matchesSearch;
     });
   }, [results, selectedExam, passFilter, searchQuery]);
+
+  const pageResults = useMemo(
+    () => filteredResults.slice((page - 1) * pageSize, page * pageSize),
+    [filteredResults, page, pageSize]
+  );
+
 
   const analytics = useMemo(() => {
     const n = filteredResults.length;
@@ -423,7 +452,7 @@ export default function TeacherResultsPage() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {filteredResults.map((result) => {
+                      {pageResults.map((result) => {
                         return (
                           <TableRow key={result.id}>
                             <TableCell>
@@ -485,10 +514,17 @@ export default function TeacherResultsPage() {
                             </TableCell>
                             <TableCell>
                               <div className="flex items-center gap-1">
-                                <Button variant="ghost" size="icon" className="h-8 w-8" asChild>
-                                  <Link href={`/student/results/${result.id}`}>
-                                    <Eye className="h-4 w-4" />
-                                  </Link>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8"
+                                  title="Periksa & nilai jawaban"
+                                  onClick={() => {
+                                    setGradingId(result.id);
+                                    setGradingOpen(true);
+                                  }}
+                                >
+                                  <Eye className="h-4 w-4" />
                                 </Button>
                                 <Button
                                   variant="ghost"
@@ -505,6 +541,22 @@ export default function TeacherResultsPage() {
                       })}
                     </TableBody>
                   </Table>
+                )}
+
+                {!loading && filteredResults.length > 0 && (
+                  <DataPagination
+                    className="mt-4 border-t border-border pt-4"
+                    page={page}
+                    pageSize={pageSize}
+                    total={filteredResults.length}
+                    itemLabel="hasil"
+                    loading={loading}
+                    onPageChange={setPage}
+                    onPageSizeChange={(size) => {
+                      setPageSize(size);
+                      setPage(1);
+                    }}
+                  />
                 )}
               </CardContent>
             </Card>
@@ -559,6 +611,22 @@ export default function TeacherResultsPage() {
                       ))}
                     </TableBody>
                   </Table>
+                )}
+
+                {!loading && filteredResults.length > 0 && (
+                  <DataPagination
+                    className="mt-4 border-t border-border pt-4"
+                    page={page}
+                    pageSize={pageSize}
+                    total={filteredResults.length}
+                    itemLabel="hasil"
+                    loading={loading}
+                    onPageChange={setPage}
+                    onPageSizeChange={(size) => {
+                      setPageSize(size);
+                      setPage(1);
+                    }}
+                  />
                 )}
               </CardContent>
             </Card>
@@ -632,6 +700,18 @@ export default function TeacherResultsPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <ResultGradingDialog
+        resultId={gradingId}
+        open={gradingOpen}
+        onOpenChange={(o) => {
+          setGradingOpen(o);
+          if (!o) setGradingId(null);
+        }}
+        onGraded={() => {
+          void fetchData();
+        }}
+      />
     </TeacherNav>
   );
 }

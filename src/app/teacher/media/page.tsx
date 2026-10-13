@@ -273,25 +273,48 @@ export default function TeacherMediaUploadPage() {
           <Card>
             <CardHeader>
               <CardTitle>Link Gambar</CardTitle>
-              <CardDescription>Setelah upload, link HTTPS akan muncul di sini.</CardDescription>
+              <CardDescription>
+                Otomatis terisi setelah upload — atau tempel URL HTTPS gambar yang sudah ada untuk
+                disalin/disimpan.
+              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                <Input value={uploadedUrl} readOnly placeholder="Belum ada link…" />
+                <Input
+                  value={uploadedUrl}
+                  onChange={(e) => setUploadedUrl(e.target.value)}
+                  placeholder="https://res.cloudinary.com/…/gambar.png"
+                  aria-label="URL gambar"
+                />
                 <Button type="button" variant="outline" onClick={() => void copyUrl()} disabled={!uploadedUrl}>
                   <Copy className="h-4 w-4 mr-2" />
                   Salin
                 </Button>
               </div>
-              {uploadedUrl && (
-                <a
-                  className="text-sm text-primary underline underline-offset-2 break-all"
-                  href={uploadedUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  {uploadedUrl}
-                </a>
+
+              {uploadedUrl && !/^https:\/\//i.test(uploadedUrl.trim()) && (
+                <p className="text-xs text-destructive">
+                  Gunakan URL HTTPS (http:// atau path lokal tidak bisa dipakai murid).
+                </p>
+              )}
+
+              {uploadedUrl && /^https:\/\//i.test(uploadedUrl.trim()) && (
+                <div className="space-y-2">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={uploadedUrl}
+                    alt="Pratinjau gambar"
+                    className="max-h-56 w-auto rounded-lg border border-border object-contain"
+                  />
+                  <a
+                    className="text-sm text-primary underline underline-offset-2 break-all"
+                    href={uploadedUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    {uploadedUrl}
+                  </a>
+                </div>
               )}
             </CardContent>
           </Card>

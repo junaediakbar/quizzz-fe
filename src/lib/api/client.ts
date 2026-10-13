@@ -99,11 +99,20 @@ export const apiRequest = async <T = unknown>(
 
     // Handle 401 Unauthorized - token expired or invalid
     if (response.status === 401) {
-      removeAuthToken();
-      if (typeof window !== 'undefined') {
-        window.location.href = '/login';
+      // 401 dari login/register = kredensial salah, bukan sesi kedaluwarsa.
+      // Jangan redirect (itu menelan pesan error) — tampilkan pesannya.
+      const isAuthEndpoint =
+        endpoint.startsWith('/auth/login') || endpoint.startsWith('/auth/register');
+      if (!isAuthEndpoint) {
+        removeAuthToken();
+        if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
+          window.location.href = '/login';
+        }
       }
-      throw new Error('Unauthorized');
+      const unauthorized: ApiError = await response
+        .json()
+        .catch(() => ({ error: 'Unauthorized' }));
+      throw new Error(unauthorized.error || 'Unauthorized');
     }
 
     // Handle other error statuses

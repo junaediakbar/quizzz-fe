@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
+  BarChart3,
   FileText,
   Users,
   FolderKanban,
@@ -27,7 +28,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Progress } from '@/components/ui/progress';
-import { examsApi, dashboardApi } from '@/lib/api';
+import { examsApi, dashboardApi, resultsApi } from '@/lib/api';
 import { toast } from 'sonner';
 import {
   AlertDialog,
@@ -39,10 +40,53 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { Exam } from '@/lib/types';
+import { Exam, ExamResult } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { formatGradeLabel } from '@/lib/constants/grades';
 import { useAuth } from '@/contexts/AuthContext';
+
+interface ActivityItem {
+  id: string;
+  kind: 'exam' | 'result';
+  title: string;
+  detail: string;
+  at: Date;
+}
+
+/** "3 jam lalu" tanpa dependensi tambahan. */
+function relativeTime(date: Date): string {
+  const diff = Date.now() - date.getTime();
+  if (Number.isNaN(diff) || diff < 0) return '';
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'baru saja';
+  if (mins < 60) return `${mins} menit lalu`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours} jam lalu`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `${days} hari lalu`;
+  return date.toLocaleDateString('id-ID');
+}
+
+/** Gabungkan ujian terbaru + hasil terbaru menjadi feed aktivitas nyata. */
+function buildActivity(exams: Exam[], results: ExamResult[]): ActivityItem[] {
+  const fromExams: ActivityItem[] = exams.map((e) => ({
+    id: `exam-${e.id}`,
+    kind: 'exam',
+    title: `Ujian dibuat: ${e.title}`,
+    detail: `${e.subject} · ${formatGradeLabel(e.grade)} · ${e.status}`,
+    at: e.createdAt,
+  }));
+  const fromResults: ActivityItem[] = results.map((r) => ({
+    id: `result-${r.id}`,
+    kind: 'result',
+    title: `${r.studentName} menyelesaikan ujian`,
+    detail: `${r.examTitle ?? ''} · skor ${r.score}/${r.maxScore} (${Math.round(r.percentage)}%)`,
+    at: r.submittedAt,
+  }));
+  return [...fromExams, ...fromResults]
+    .sort((a, b) => b.at.getTime() - a.at.getTime())
+    .slice(0, 6);
+}
 
 export default function TeacherDashboardPage() {
   const router = useRouter();
@@ -59,6 +103,10 @@ export default function TeacherDashboardPage() {
   const [deletingExam, setDeletingExam] = useState<Exam | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  /** Pencarian di header: menyaring daftar ujian + Enter mencari di bank soal. */
+  const [searchQuery, setSearchQuery] = useState('');
+  /** Aktivitas terbaru (ujian dibuat + hasil masuk), bukan teks statis. */
+  const [activity, setActivity] = useState<ActivityItem[]>([]);
 
   // Fetch dashboard data on mount
   useEffect(() => {
@@ -73,10 +121,14 @@ export default function TeacherDashboardPage() {
 
       try {
         const dash = await dashboardApi.teacher(user.id);
-        const examsData = await examsApi.list({ limit: 10 });
+        const [examsData, resultsPage] = await Promise.all([
+          examsApi.list({ limit: 10 }),
+          resultsApi.list({ limit: 8 }).catch(() => null),
+        ]);
         const exams = examsData.exams || [];
 
         setRecentExams(exams.slice(0, 5));
+        setActivity(buildActivity(exams, resultsPage?.results ?? []));
         setStats({
           totalExams: dash.totalExams,
           activeExams: dash.activeExams,
@@ -88,6 +140,7 @@ export default function TeacherDashboardPage() {
         const errorMessage = err instanceof Error ? err.message : 'Failed to load dashboard data';
         setError(errorMessage);
         setRecentExams([]);
+        setActivity([]);
       } finally {
         setIsLoading(false);
       }
@@ -102,6 +155,8 @@ export default function TeacherDashboardPage() {
       const dash = await dashboardApi.teacher(user.id);
       const examsData = await examsApi.list({ limit: 10 });
       setRecentExams((examsData.exams || []).slice(0, 5));
+      const resultsPage = await resultsApi.list({ limit: 8 }).catch(() => null);
+      setActivity(buildActivity(examsData.exams || [], resultsPage?.results ?? []));
       setStats({
         totalExams: dash.totalExams,
         activeExams: dash.activeExams,
@@ -133,6 +188,19 @@ export default function TeacherDashboardPage() {
       setDeleting(false);
     }
   };
+
+  /** Daftar ujian di dashboard disaring oleh kotak pencarian. */
+  const filteredRecentExams = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return recentExams;
+    return recentExams.filter((e) =>
+      [e.title, e.subject, formatGradeLabel(e.grade), e.status, e.description ?? '']
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase()
+        .includes(q)
+    );
+  }, [recentExams, searchQuery]);
 
   const statCards = [
     {
@@ -208,25 +276,40 @@ export default function TeacherDashboardPage() {
   }
 
   return (
-    <TeacherNav userName={user?.name} userAvatar={user?.avatar}>
+    <TeacherNav userName={user?.name} userAvatar={user?.avatar} hideGlobalSearch>
       {/* Header */}
       <header className="min-h-16 border-b border-border bg-card flex flex-col gap-4 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
         <div className="flex flex-1 items-center min-w-0 w-full sm:max-w-md lg:max-w-xl">
           <div className="relative w-full">
             <FileText className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <input
-              type="text"
-              placeholder="Search exams, questions…"
-              className="w-full pl-10 pr-4 py-2.5 sm:py-2 rounded-lg border border-border bg-background text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-            />
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                const q = searchQuery.trim();
+                // Enter = cari di bank soal (korpus soal), daftar ujian di bawah
+                // sudah tersaring sambil mengetik.
+                router.push(q ? `/teacher/questions?search=${encodeURIComponent(q)}` : '/teacher/questions');
+              }}
+            >
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Cari ujian di bawah, atau Enter untuk cari soal…"
+                aria-label="Cari ujian atau soal"
+                className="w-full pl-10 pr-4 py-2.5 sm:py-2 rounded-lg border border-border bg-background text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+              />
+            </form>
           </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-          <Button variant="outline" size="sm" className="touch-manipulation">
-            <Clock className="w-4 h-4 sm:mr-2" />
-            <span className="hidden sm:inline">Recent Activity</span>
-            <span className="sm:hidden">Activity</span>
+          <Button variant="outline" size="sm" className="touch-manipulation" asChild>
+            <a href="#recent-activity">
+              <Clock className="w-4 h-4 sm:mr-2" />
+              <span className="hidden sm:inline">Recent Activity</span>
+              <span className="sm:hidden">Activity</span>
+            </a>
           </Button>
           <Button size="sm" className="gap-2 touch-manipulation" asChild>
             <Link href="/teacher/exams/create">
@@ -310,13 +393,17 @@ export default function TeacherDashboardPage() {
                 )}
 
                 <div className="space-y-4">
-                  {recentExams.length === 0 ? (
+                  {filteredRecentExams.length === 0 ? (
                     <div className="text-center py-8">
                       <FileText className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
-                      <p className="text-muted-foreground">No exams yet. Create your first exam!</p>
+                      <p className="text-muted-foreground">
+                        {searchQuery.trim()
+                          ? `Tidak ada ujian yang cocok dengan “${searchQuery.trim()}”. Tekan Enter untuk mencari di bank soal.`
+                          : 'Belum ada ujian. Buat ujian pertama Anda!'}
+                      </p>
                     </div>
                   ) : (
-                    recentExams.map((exam) => (
+                    filteredRecentExams.map((exam) => (
                       <div key={exam.id} className="flex items-start sm:items-center justify-between p-3.5 sm:p-4 border rounded-xl hover:bg-muted/50 gap-2">
                         <div className="flex-1 min-w-0">
                           <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 mb-1.5">
@@ -339,9 +426,11 @@ export default function TeacherDashboardPage() {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
-                            <DropdownMenuItem>
-                              <Play className="w-4 h-4 mr-2" />
-                              Start Exam
+                            <DropdownMenuItem
+                              onClick={() => router.push(`/teacher/results?exam=${exam.id}`)}
+                            >
+                              <BarChart3 className="w-4 h-4 mr-2" />
+                              Lihat hasil &amp; nilai
                             </DropdownMenuItem>
                             <DropdownMenuItem
                               onClick={() => router.push(`/teacher/exams/${exam.id}/edit`)}
@@ -366,26 +455,43 @@ export default function TeacherDashboardPage() {
             </Card>
           </div>
 
-          {/* Recent Activity */}
-          <div>
+          {/* Recent Activity — data nyata (ujian dibuat + hasil masuk) */}
+          <div id="recent-activity" className="scroll-mt-20">
             <Card>
               <CardHeader>
                 <CardTitle>Recent Activity</CardTitle>
-                <CardDescription>Latest updates from your classroom</CardDescription>
+                <CardDescription>Aktivitas terbaru dari ujian Anda</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="space-y-4">
-                  <div className="flex gap-3">
-                    <div className="w-10 h-10 rounded-full bg-blue-500/10 flex items-center justify-center">
-                      <FileText className="w-5 h-5 text-blue-500" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium">Welcome to QuizApp!</p>
-                      <p className="text-xs text-muted-foreground">Get started by creating your first exam</p>
-                      <p className="text-xs text-muted-foreground mt-1">Just now</p>
-                    </div>
+                {isLoading ? (
+                  <p className="py-6 text-center text-sm text-muted-foreground">Memuat aktivitas…</p>
+                ) : activity.length === 0 ? (
+                  <p className="py-6 text-center text-sm text-muted-foreground">
+                    Belum ada aktivitas. Buat ujian pertama Anda untuk memulai.
+                  </p>
+                ) : (
+                  <div className="space-y-4">
+                    {activity.map((item) => (
+                      <div key={item.id} className="flex gap-3">
+                        <div
+                          className={cn(
+                            'w-10 h-10 rounded-full flex items-center justify-center shrink-0',
+                            item.kind === 'exam'
+                              ? 'bg-blue-500/10 text-blue-500'
+                              : 'bg-emerald-500/10 text-emerald-600'
+                          )}
+                        >
+                          <FileText className="w-5 h-5" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium truncate">{item.title}</p>
+                          <p className="text-xs text-muted-foreground truncate">{item.detail}</p>
+                          <p className="text-xs text-muted-foreground mt-1">{relativeTime(item.at)}</p>
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                </div>
+                )}
               </CardContent>
             </Card>
           </div>

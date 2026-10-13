@@ -1,7 +1,7 @@
 'use client';
 
-import { Fragment, useCallback, useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { Fragment, Suspense, useCallback, useEffect, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { MathPreview } from '@/components/shared/math-preview';
 import { MathText } from '@/components/shared/math-text';
+import { isTitleRedundant } from '@/components/shared/question-image-display';
 import { Textarea } from '@/components/ui/textarea';
 import {
   Table,
@@ -67,17 +68,45 @@ import { mediaApi } from '@/lib/api/media';
 import { questionBanksApi } from '@/lib/api/question-banks';
 import { downloadBlobGet } from '@/lib/api/client';
 import { normalizeImportQuestionsPayload } from '@/lib/question-images';
+import { DataPagination, DEFAULT_PAGE_SIZE } from '@/components/shared/data-pagination';
 import { toast } from 'sonner';
 
-export default function QuestionBankPage() {
+/**
+ * Halaman bank soal.
+ *
+ * `?search=` harus berlaku juga saat pengguna SUDAH berada di halaman ini
+ * (mis. memakai kotak pencarian di header). `useState` initializer hanya jalan
+ * sekali, jadi komponen di-remount lewat `key` ketika nilai pencarian di URL
+ * berubah — tanpa effect set-state dan tanpa full page reload.
+ */
+function QuestionBankWithSearch() {
+  const searchParams = useSearchParams();
+  const search = searchParams.get('search') ?? '';
+  return <QuestionBankPage key={search} initialSearch={search} />;
+}
+
+export default function QuestionBankPageWrapper() {
+  return (
+    <Suspense fallback={<TeacherNav><div className="flex-1" /></TeacherNav>}>
+      <QuestionBankWithSearch />
+    </Suspense>
+  );
+}
+
+function QuestionBankPage({ initialSearch = '' }: { initialSearch?: string }) {
   const { user, isLoading: authLoading } = useAuth();
   const router = useRouter();
-  const [searchQuery, setSearchQuery] = useState('');
+  /** Nilai awal dari ?search= (dipakai kotak pencarian global di header). */
+  const [searchQuery, setSearchQuery] = useState(initialSearch);
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [selectedType, setSelectedType] = useState<string>('all');
   const [selectedDifficulty, setSelectedDifficulty] = useState<string>('all');
   const [selectedBank, setSelectedBank] = useState<string>('all');
   const [questions, setQuestions] = useState<Question[]>([]);
+  /** Pagination server-side: `total` berasal dari API, bukan panjang halaman. */
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
+  const [total, setTotal] = useState(0);
   const [banks, setBanks] = useState<QuestionBank[]>([]);
   const [bankCounts, setBankCounts] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
@@ -167,8 +196,11 @@ export default function QuestionBankPage() {
           search: debouncedSearch.trim() || undefined,
           type: selectedType === 'all' ? undefined : selectedType,
           difficulty: selectedDifficulty === 'all' ? undefined : selectedDifficulty,
+          limit: pageSize,
+          offset: (page - 1) * pageSize,
         });
         setQuestions(res.questions);
+        setTotal(res.total);
       } else {
         const g = await questionBanksApi.get(selectedBank);
         let qs = g.questions;
@@ -181,11 +213,14 @@ export default function QuestionBankPage() {
         }
         if (selectedType !== 'all') qs = qs.filter((x) => x.type === selectedType);
         if (selectedDifficulty !== 'all') qs = qs.filter((x) => x.difficulty === selectedDifficulty);
-        setQuestions(qs);
+        // Bank soal kecil: filter di klien, tapi tetap dipotong per halaman.
+        setTotal(qs.length);
+        setQuestions(qs.slice((page - 1) * pageSize, page * pageSize));
       }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Gagal memuat soal');
       setQuestions([]);
+      setTotal(0);
     } finally {
       setLoading(false);
     }
@@ -194,6 +229,8 @@ export default function QuestionBankPage() {
     user?.role,
     selectedBank,
     debouncedSearch,
+    page,
+    pageSize,
     selectedType,
     selectedDifficulty,
   ]);
@@ -643,7 +680,7 @@ export default function QuestionBankPage() {
           <div className="flex items-center gap-4 flex-1 min-w-0">
             <h1 className="text-lg sm:text-xl font-semibold truncate">Question Bank</h1>
             <Badge variant="outline" className="shrink-0">
-              {loading ? '…' : `${filteredQuestions.length} ditampilkan`}
+              {loading ? '…' : `${total} soal`}
             </Badge>
             {questionsNeedingFix.length > 0 && (
               <Badge variant="outline" className="shrink-0 bg-orange-500/10 text-orange-500">
@@ -693,7 +730,10 @@ export default function QuestionBankPage() {
 
               <button
                 type="button"
-                onClick={() => setSelectedBank('all')}
+                onClick={() => {
+                  setSelectedBank('all');
+                  setPage(1);
+                }}
                 className={cn(
                   'w-full md:w-full shrink-0 min-w-[140px] md:min-w-0 flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-left transition-colors',
                   selectedBank === 'all' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'
@@ -713,7 +753,10 @@ export default function QuestionBankPage() {
                 >
                   <button
                     type="button"
-                    onClick={() => setSelectedBank(bank.id)}
+                    onClick={() => {
+                      setSelectedBank(bank.id);
+                      setPage(1);
+                    }}
                     className={cn(
                       'flex-1 min-w-0 flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-left transition-colors',
                       selectedBank === bank.id
@@ -768,12 +811,21 @@ export default function QuestionBankPage() {
                       <Input
                         placeholder="Search questions..."
                         value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
+                        onChange={(e) => {
+                          setSearchQuery(e.target.value);
+                          setPage(1);
+                        }}
                         className="pl-10"
                       />
                     </div>
 
-                    <Select value={selectedType} onValueChange={(v) => setSelectedType(v ?? 'all')}>
+                    <Select
+                      value={selectedType}
+                      onValueChange={(v) => {
+                        setSelectedType(v ?? 'all');
+                        setPage(1);
+                      }}
+                    >
                       <SelectTrigger className="w-[180px]">
                         <SelectValue placeholder="Question Type" />
                       </SelectTrigger>
@@ -787,7 +839,13 @@ export default function QuestionBankPage() {
                       </SelectContent>
                     </Select>
 
-                    <Select value={selectedDifficulty} onValueChange={(v) => setSelectedDifficulty(v ?? 'all')}>
+                    <Select
+                      value={selectedDifficulty}
+                      onValueChange={(v) => {
+                        setSelectedDifficulty(v ?? 'all');
+                        setPage(1);
+                      }}
+                    >
                       <SelectTrigger className="w-[140px]">
                         <SelectValue placeholder="Difficulty" />
                       </SelectTrigger>
@@ -885,12 +943,14 @@ export default function QuestionBankPage() {
                               onCheckedChange={toggleAllSelection}
                             />
                           </TableHead>
-                          <TableHead>Question</TableHead>
+                          <TableHead className="w-[300px] max-w-[300px]">Question</TableHead>
                           <TableHead>Type</TableHead>
                           <TableHead>Difficulty</TableHead>
                           <TableHead>Points</TableHead>
                           <TableHead>Tags</TableHead>
-                          <TableHead className="w-[140px] text-center">Actions</TableHead>
+                          <TableHead className="sticky right-0 z-20 w-[140px] border-l border-border bg-card text-center">
+                            Actions
+                          </TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -961,20 +1021,26 @@ export default function QuestionBankPage() {
                                     onCheckedChange={() => toggleQuestionSelection(question.id)}
                                   />
                                 </TableCell>
-                                <TableCell>
+                                <TableCell className="max-w-[300px]">
                                   <div className="flex items-start gap-2">
                                     <div className="flex-1 min-w-0">
                                       <div className="flex items-center gap-2 flex-wrap">
-                                        <p className="font-medium">{question.title}</p>
+                                        {!isTitleRedundant(question.title, question.content) && (
+                                          <p className="truncate font-medium" title={question.title}>
+                                            {question.title}
+                                          </p>
+                                        )}
                                         {question.type === 'multiple-choice' && (!question.options || question.options.length === 0) && (
                                           <Badge variant="outline" className="bg-orange-500/10 text-orange-500 text-xs shrink-0">
                                             <span className="mr-1">⚠️</span>Tanpa Opsi
                                           </Badge>
                                         )}
                                       </div>
-                                      <MathText className="text-sm text-muted-foreground line-clamp-1 block">
-                                        {question.content}
-                                      </MathText>
+                                      <div title={question.content}>
+                                        <MathText className="mt-0.5 line-clamp-2 whitespace-normal text-sm text-muted-foreground">
+                                          {question.content}
+                                        </MathText>
+                                      </div>
                                     </div>
                                   </div>
                                 </TableCell>
@@ -995,8 +1061,8 @@ export default function QuestionBankPage() {
                                     )}
                                   </div>
                                 </TableCell>
-                                <TableCell>
-                                  <div className="flex items-center gap-1">
+                                <TableCell className="sticky right-0 z-10 border-l border-border bg-card">
+                                  <div className="flex items-center justify-center gap-1">
                                     <Button
                                       variant="ghost"
                                       size="icon"
@@ -1058,6 +1124,20 @@ export default function QuestionBankPage() {
                 {!loading && filteredQuestions.length === 0 && (
                   <p className="text-center text-muted-foreground py-12 text-sm">Tidak ada soal.</p>
                 )}
+
+                <DataPagination
+                  className="mt-4 border-t border-border pt-4"
+                  page={page}
+                  pageSize={pageSize}
+                  total={total}
+                  itemLabel="soal"
+                  loading={loading}
+                  onPageChange={setPage}
+                  onPageSizeChange={(size) => {
+                    setPageSize(size);
+                    setPage(1);
+                  }}
+                />
               </Card>
             </div>
           </div>
@@ -1604,7 +1684,7 @@ function FixOptionItem({
         <div className="flex items-start justify-between gap-4">
           <div className="flex-1 min-w-0">
             <p className="font-medium truncate">{question.title}</p>
-            <MathText className="text-sm text-muted-foreground line-clamp-1 block">
+            <MathText className="text-sm text-muted-foreground line-clamp-1">
               {question.content}
             </MathText>
           </div>

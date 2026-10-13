@@ -52,9 +52,16 @@ export function StudentHeader({
         <div className="flex shrink-0 items-center gap-2">
           {trailing}
           {!hideSchedule && (
-            <Button variant="outline" size="sm" className="hidden touch-manipulation sm:inline-flex">
-              <Calendar className="mr-2 h-4 w-4" />
-              Schedule
+            <Button
+              variant="outline"
+              size="sm"
+              asChild
+              className="hidden touch-manipulation sm:inline-flex"
+            >
+              <Link href="/student/dashboard#jadwal-ujian">
+                <Calendar className="mr-2 h-4 w-4" />
+                Jadwal Ujian
+              </Link>
             </Button>
           )}
           <UserAccountMenu

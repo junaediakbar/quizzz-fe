@@ -9,11 +9,20 @@ export interface CreateQuestionBankRequest {
 }
 
 export const questionBanksApi = {
-  list: async (): Promise<{ banks: QuestionBank[]; count: number }> => {
-    const raw = await get<{ banks: Record<string, unknown>[]; count: number }>('/question-banks');
+  list: async (): Promise<{
+    banks: QuestionBank[];
+    count: number;
+    total: number;
+  }> => {
+    const raw = await get<{
+      banks: Record<string, unknown>[];
+      count?: number;
+      total?: number;
+    }>('/question-banks');
     return {
       banks: (raw.banks || []).map((b) => mapQuestionBank(b)),
-      count: raw.count ?? 0,
+      count: raw.count ?? (raw.banks || []).length,
+      total: raw.total ?? raw.count ?? (raw.banks || []).length,
     };
   },
 

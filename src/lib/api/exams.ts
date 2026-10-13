@@ -2,6 +2,15 @@ import { get, post, put, del } from './client';
 import { Exam, ExamConfig } from '../types';
 import { mapExam } from './mappers';
 
+/** Bagian ujian yang dikirim ke backend (snake_case) */
+export interface ExamPartRequest {
+  title: string;
+  description?: string;
+  question_ids: string[];
+  /** > 0 menimpa poin bank soal untuk semua soal di bagian ini */
+  points_per_question?: number;
+}
+
 export interface CreateExamRequest {
   title: string;
   description?: string;
@@ -9,6 +18,8 @@ export interface CreateExamRequest {
   grade: string;
   config: ExamConfig;
   question_ids?: string[];
+  /** Bila diisi, soal dikelompokkan per bagian (question_ids diabaikan backend) */
+  parts?: ExamPartRequest[];
   scheduled_start?: string;
   scheduled_end?: string;
 }
@@ -21,6 +32,7 @@ export interface UpdateExamRequest {
   config?: ExamConfig;
   status?: string;
   question_ids?: string[];
+  parts?: ExamPartRequest[];
   scheduled_start?: string;
   scheduled_end?: string;
 }
@@ -28,6 +40,11 @@ export interface UpdateExamRequest {
 export interface ExamListResponse {
   exams: Exam[];
   count: number;
+  /** Total ujian yang cocok dengan filter (bukan panjang halaman). */
+  total: number;
+  limit: number;
+  offset: number;
+  hasMore: boolean;
 }
 
 /** Backend expects snake_case JSON keys on ExamConfig */
@@ -52,19 +69,31 @@ export const examsApi = {
   list: async (filters?: {
     status?: string;
     subject?: string;
+    search?: string;
     limit?: number;
+    offset?: number;
   }): Promise<ExamListResponse> => {
     const params: Record<string, string> = {};
     if (filters?.status) params.status = filters.status;
     if (filters?.subject) params.subject = filters.subject;
-    if (filters?.limit) params.limit = filters.limit.toString();
-    const raw = await get<{ exams: Record<string, unknown>[]; count: number }>(
-      '/exams',
-      Object.keys(params).length > 0 ? params : undefined
-    );
+    if (filters?.search) params.search = filters.search;
+    if (filters?.limit !== undefined) params.limit = String(filters.limit);
+    if (filters?.offset) params.offset = String(filters.offset);
+    const raw = await get<{
+      exams: Record<string, unknown>[];
+      count?: number;
+      total?: number;
+      limit?: number;
+      offset?: number;
+      has_more?: boolean;
+    }>('/exams', Object.keys(params).length > 0 ? params : undefined);
     return {
       exams: (raw.exams || []).map((e) => mapExam(e)),
       count: raw.count ?? (raw.exams || []).length,
+      total: raw.total ?? raw.count ?? (raw.exams || []).length,
+      limit: raw.limit ?? 0,
+      offset: raw.offset ?? 0,
+      hasMore: raw.has_more ?? false,
     };
   },
 
@@ -81,6 +110,7 @@ export const examsApi = {
       grade: data.grade,
       config: configToApi(data.config),
       question_ids: data.question_ids,
+      ...(data.parts && data.parts.length > 0 ? { parts: data.parts } : {}),
       scheduled_start: data.scheduled_start,
       scheduled_end: data.scheduled_end,
     });
@@ -96,6 +126,7 @@ export const examsApi = {
     if (data.config !== undefined) body.config = configToApi(data.config);
     if (data.status !== undefined) body.status = data.status;
     if (data.question_ids !== undefined) body.question_ids = data.question_ids;
+    if (data.parts !== undefined) body.parts = data.parts;
     if (data.scheduled_start !== undefined) body.scheduled_start = data.scheduled_start;
     if (data.scheduled_end !== undefined) body.scheduled_end = data.scheduled_end;
     const raw = await put<Record<string, unknown>>(`/exams/${id}`, body);

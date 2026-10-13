@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { TeacherNav } from '@/components/shared/teacher-nav';
+import { DataPagination, DEFAULT_PAGE_SIZE } from '@/components/shared/data-pagination';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -59,6 +60,10 @@ export default function TeacherStudentsPage() {
   const [search, setSearch] = useState('');
   const [debounced, setDebounced] = useState('');
   const [students, setStudents] = useState<AppUser[]>([]);
+  /** Pagination server-side — `total` dari API, bukan panjang halaman. */
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [editOpen, setEditOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
@@ -69,7 +74,10 @@ export default function TeacherStudentsPage() {
   const [form, setForm] = useState({ name: '', email: '', avatar: '', password: '' });
 
   useEffect(() => {
-    const t = setTimeout(() => setDebounced(search), 300);
+    const t = setTimeout(() => {
+      setDebounced(search);
+      setPage(1);
+    }, 300);
     return () => clearTimeout(t);
   }, [search]);
 
@@ -81,15 +89,21 @@ export default function TeacherStudentsPage() {
     }
     setLoading(true);
     try {
-      const res = await teacherStudentsApi.list({ search: debounced || undefined });
+      const res = await teacherStudentsApi.list({
+        search: debounced || undefined,
+        limit: pageSize,
+        offset: (page - 1) * pageSize,
+      });
       setStudents(res.students);
+      setTotal(res.total);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Gagal memuat siswa');
       setStudents([]);
+      setTotal(0);
     } finally {
       setLoading(false);
     }
-  }, [user?.id, user?.role, debounced]);
+  }, [user?.id, user?.role, debounced, page, pageSize]);
 
   useEffect(() => {
     if (authLoading) return;
@@ -224,7 +238,7 @@ export default function TeacherStudentsPage() {
             </div>
             <div className="flex items-center gap-2">
               <Badge variant="secondary" className="w-fit shrink-0">
-                {loading ? '…' : `${students.length} siswa`}
+                {loading ? '…' : `${total} siswa`}
               </Badge>
               <Button onClick={openCreate} size="sm" className="gap-1.5 touch-manipulation">
                 <Plus className="h-4 w-4" />
@@ -312,6 +326,19 @@ export default function TeacherStudentsPage() {
                       )}
                     </div>
                   )}
+                <DataPagination
+                    className="mt-4 border-t border-border pt-4"
+                    page={page}
+                    pageSize={pageSize}
+                    total={total}
+                    itemLabel="siswa"
+                    loading={loading}
+                    onPageChange={setPage}
+                    onPageSizeChange={(size) => {
+                      setPageSize(size);
+                      setPage(1);
+                    }}
+                  />
                 </CardContent>
               </Card>
 

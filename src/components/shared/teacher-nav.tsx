@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import {
   LayoutDashboard,
@@ -28,6 +28,13 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { UserAccountMenu } from '@/components/shared/user-account-menu';
 import { useAuth } from '@/contexts/AuthContext';
@@ -47,13 +54,43 @@ interface TeacherNavProps {
   userName?: string;
   userAvatar?: string;
   children?: React.ReactNode;
+  /**
+   * Sembunyikan kotak pencarian global di header. Dipakai halaman yang punya
+   * kotak pencariannya sendiri (mis. dashboard) agar tidak ada dua kotak.
+   */
+  hideGlobalSearch?: boolean;
 }
 
-export function TeacherNav({ userName, children }: TeacherNavProps) {
+/**
+ * Lonceng notifikasi: backend belum punya feed notifikasi, jadi ini jujur
+ * menampilkan status kosong (tanpa titik merah palsu).
+ */
+function NotificationBell() {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="ghost" size="icon" className="h-9 w-9" aria-label="Notifikasi">
+          <Bell className="w-4 h-4 sm:w-5 sm:h-5" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-64">
+        <DropdownMenuLabel>Notifikasi</DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        <p className="px-2 py-3 text-xs text-muted-foreground">
+          Belum ada notifikasi. Hasil ujian dan aktivitas siswa muncul di halaman Results.
+        </p>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+export function TeacherNav({ userName, children, hideGlobalSearch = false }: TeacherNavProps) {
   const pathname = usePathname();
+  const router = useRouter();
   const { user } = useAuth();
   const [sidebarHidden, setSidebarHidden] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [globalSearch, setGlobalSearch] = useState('');
 
   const displayName = userName || user?.name || 'Teacher';
   void displayName;
@@ -159,7 +196,7 @@ export function TeacherNav({ userName, children }: TeacherNavProps) {
           />
         </header>
 
-        {/* Desktop — avatar kanan atas */}
+        {/* Desktop — pencarian, notifikasi, avatar kanan atas */}
         <header className="hidden md:flex h-14 shrink-0 items-center justify-between gap-2 border-b border-border bg-card/80 px-4 sm:px-6 backdrop-blur-sm">
           <Button
             variant="ghost"
@@ -170,12 +207,37 @@ export function TeacherNav({ userName, children }: TeacherNavProps) {
           >
             {sidebarHidden ? <PanelLeftOpen className="h-5 w-5" /> : <PanelLeftClose className="h-5 w-5" />}
           </Button>
-          <UserAccountMenu
-            profileHref="/teacher/profile"
-            settingsHref="/teacher/settings"
-            avatarFallbackClassName="bg-primary/10 text-primary font-semibold"
-            variant="icon"
-          />
+
+          <div className="flex items-center gap-2 sm:gap-3">
+            {!hideGlobalSearch && (
+            <form
+              className="relative hidden sm:block w-56 lg:w-80"
+              onSubmit={(e) => {
+                e.preventDefault();
+                const q = globalSearch.trim();
+                router.push(
+                  q ? `/teacher/questions?search=${encodeURIComponent(q)}` : '/teacher/questions'
+                );
+              }}
+            >
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Input
+                value={globalSearch}
+                onChange={(e) => setGlobalSearch(e.target.value)}
+                placeholder="Cari soal…"
+                className="pl-10 h-9 text-sm"
+                aria-label="Cari soal di bank soal"
+              />
+            </form>
+            )}
+            <NotificationBell />
+            <UserAccountMenu
+              profileHref="/teacher/profile"
+              settingsHref="/teacher/settings"
+              avatarFallbackClassName="bg-primary/10 text-primary font-semibold"
+              variant="icon"
+            />
+          </div>
         </header>
 
         {children || (
@@ -183,20 +245,27 @@ export function TeacherNav({ userName, children }: TeacherNavProps) {
             {/* Default Header */}
             <header className="h-14 sm:h-16 border-b border-border bg-card/80 backdrop-blur-sm flex items-center justify-between px-4 sm:px-6">
               <div className="flex items-center gap-2 sm:gap-4 flex-1">
-                <div className="relative w-full max-w-[200px] sm:max-w-96">
+                <form
+                  className="relative w-full max-w-[200px] sm:max-w-96"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    const q = globalSearch.trim();
+                    router.push(q ? `/teacher/questions?search=${encodeURIComponent(q)}` : '/teacher/questions');
+                  }}
+                >
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                   <Input
-                    placeholder="Search..."
+                    value={globalSearch}
+                    onChange={(e) => setGlobalSearch(e.target.value)}
+                    placeholder="Cari soal…"
                     className="pl-10 h-9 text-sm"
+                    aria-label="Cari soal di bank soal"
                   />
-                </div>
+                </form>
               </div>
 
               <div className="flex items-center gap-2 sm:gap-3">
-                <Button variant="ghost" size="icon" className="relative h-9 w-9">
-                  <Bell className="w-4 h-4 sm:w-5 sm:h-5" />
-                  <span className="absolute top-1 right-1 w-2 h-2 bg-destructive rounded-full ring-2 ring-card" />
-                </Button>
+                <NotificationBell />
               </div>
             </header>
 

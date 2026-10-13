@@ -46,7 +46,7 @@ export default function StudentResultsPage() {
     let cancelled = false;
     (async () => {
       try {
-        const list = await resultsApi.list();
+        const { results: list } = await resultsApi.list();
         if (!cancelled) setResults(list);
       } finally {
         if (!cancelled) setLoading(false);

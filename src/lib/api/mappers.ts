@@ -3,6 +3,7 @@ import {
   UserRole,
   Exam,
   ExamConfig,
+  ExamPart,
   ExamStatus,
   Question,
   QuestionBank,
@@ -12,6 +13,7 @@ import {
   AnswerReviewQuestion,
   DifficultyLevel,
   ParseResult,
+  ParsedPart,
   ParsedQuestion,
   TeacherDashboardStats,
   StudentDashboardStats,
@@ -151,9 +153,25 @@ export function mapQuestion(raw: Record<string, unknown>): Question {
     images: images.length > 0 ? images : undefined,
     imageUrls,
     categoryId: raw.category_id ? String(raw.category_id) : undefined,
+    partId: raw.part_id ? String(raw.part_id) : undefined,
+    examPoints: raw.exam_points !== undefined ? Number(raw.exam_points) : undefined,
     createdBy: String(raw.created_by ?? raw.createdBy ?? ''),
     createdAt: toDate(raw.created_at ?? raw.createdAt),
     updatedAt: toDate(raw.updated_at ?? raw.updatedAt),
+  };
+}
+
+/** Bagian/part ujian dari backend (snake_case) */
+export function mapExamPart(raw: Record<string, unknown>): ExamPart {
+  return {
+    id: String(raw.id ?? ''),
+    title: String(raw.title ?? ''),
+    description: raw.description ? String(raw.description) : undefined,
+    orderIndex: Number(raw.order_index ?? raw.orderIndex ?? 0),
+    questionCount:
+      raw.question_count !== undefined || raw.questionCount !== undefined
+        ? Number(raw.question_count ?? raw.questionCount)
+        : undefined,
   };
 }
 
@@ -161,6 +179,11 @@ export function mapExam(raw: Record<string, unknown>): Exam {
   const questionsRaw = raw.questions;
   const questions: Question[] = Array.isArray(questionsRaw)
     ? (questionsRaw as Record<string, unknown>[]).map((q) => mapQuestion(q))
+    : [];
+
+  const partsRaw = raw.parts;
+  const parts: ExamPart[] = Array.isArray(partsRaw)
+    ? (partsRaw as Record<string, unknown>[]).map((p) => mapExamPart(p))
     : [];
 
   return {
@@ -186,6 +209,7 @@ export function mapExam(raw: Record<string, unknown>): Exam {
     createdAt: toDate(raw.created_at ?? raw.createdAt),
     updatedAt: toDate(raw.updated_at ?? raw.updatedAt),
     questionCount: raw.question_count !== undefined ? Number(raw.question_count) : undefined,
+    parts: parts.length > 0 ? parts : undefined,
   };
 }
 
@@ -328,11 +352,20 @@ export function mapParseResult(raw: Record<string, unknown>): ParseResult {
   const qs = Array.isArray(raw.questions)
     ? (raw.questions as Record<string, unknown>[]).map(mapParsedQuestion)
     : [];
+  const partsRaw = raw.parts;
+  const parts: ParsedPart[] = Array.isArray(partsRaw)
+    ? (partsRaw as Record<string, unknown>[]).map((p) => ({
+        title: String(p.title ?? ''),
+        instruction: p.instruction ? String(p.instruction) : undefined,
+      }))
+    : [];
   return {
     success: Boolean(raw.success),
     questions: qs,
+    parts: parts.length > 0 ? parts : undefined,
     errors: Array.isArray(raw.errors) ? (raw.errors as string[]) : undefined,
     warnings: Array.isArray(raw.warnings) ? (raw.warnings as string[]) : undefined,
+    engine: raw.engine === 'ai' || raw.engine === 'manual' ? raw.engine : undefined,
   };
 }
 
@@ -359,5 +392,7 @@ function mapParsedQuestion(raw: Record<string, unknown>): ParsedQuestion {
     difficulty: (raw.difficulty as DifficultyLevel) || 'medium',
     points: Number(raw.points ?? 5),
     tags: Array.isArray(raw.tags) ? (raw.tags as string[]) : [],
+    part: raw.part ? String(raw.part) : undefined,
+    partInstruction: raw.part_instruction ? String(raw.part_instruction) : undefined,
   };
 }

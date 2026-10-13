@@ -34,6 +34,11 @@ export interface UpdateQuestionRequest {
 export interface QuestionListResponse {
   questions: Question[];
   count: number;
+  /** Total soal yang cocok dengan filter (bukan panjang halaman). */
+  total: number;
+  limit: number;
+  offset: number;
+  hasMore: boolean;
 }
 
 export const questionsApi = {
@@ -54,13 +59,21 @@ export const questionsApi = {
     if (filters?.search) params.search = filters.search;
     if (filters?.limit) params.limit = filters.limit.toString();
     if (filters?.offset) params.offset = filters.offset.toString();
-    const raw = await get<{ questions: Record<string, unknown>[]; count: number }>(
-      '/questions',
-      Object.keys(params).length > 0 ? params : undefined
-    );
+    const raw = await get<{
+      questions: Record<string, unknown>[];
+      count?: number;
+      total?: number;
+      limit?: number;
+      offset?: number;
+      has_more?: boolean;
+    }>('/questions', Object.keys(params).length > 0 ? params : undefined);
     return {
       questions: (raw.questions || []).map((q) => mapQuestion(q)),
       count: raw.count ?? (raw.questions || []).length,
+      total: raw.total ?? raw.count ?? (raw.questions || []).length,
+      limit: raw.limit ?? 0,
+      offset: raw.offset ?? 0,
+      hasMore: raw.has_more ?? false,
     };
   },
 
@@ -109,12 +122,17 @@ export const questionsApi = {
   },
 
   getMissingOptions: async (): Promise<QuestionListResponse> => {
-    const raw = await get<{ questions: Record<string, unknown>[]; count: number }>(
+    const raw = await get<{ questions: Record<string, unknown>[]; count?: number }>(
       '/questions/missing-options'
     );
+    const questions = (raw.questions || []).map((q) => mapQuestion(q));
     return {
-      questions: (raw.questions || []).map((q) => mapQuestion(q)),
-      count: raw.count ?? 0,
+      questions,
+      count: raw.count ?? questions.length,
+      total: questions.length,
+      limit: 0,
+      offset: 0,
+      hasMore: false,
     };
   },
 

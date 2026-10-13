@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -25,9 +26,19 @@ import {
   ImageIcon,
   FileText,
   X,
+  Layers,
+  GraduationCap,
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import {
   Select,
   SelectContent,
@@ -36,8 +47,10 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
-import { parseQuestions } from '@/lib/api/parser';
+import { parseQuestions, type ParseMode } from '@/lib/api/parser';
 import { questionsApi, type CreateQuestionRequest } from '@/lib/api/questions';
+import { examsApi, type ExamPartRequest } from '@/lib/api/exams';
+import { GRADE_OPTIONS } from '@/lib/constants/grades';
 import {
   attachImagesFromParserTemplate,
   attachUploadedPageImagesByQuestionMap,
@@ -57,7 +70,7 @@ import { MathText } from '@/components/shared/math-text';
 import type { DifficultyLevel, ParseResult, ParsedQuestion, QuestionType } from '@/lib/types';
 
 /** Soal hasil parse + id stabil untuk key, seleksi, dan reorder */
-type WorkingQuestion = ParsedQuestion & { id: string };
+type WorkingQuestion = ParsedQuestion & { id: string; part?: string };
 
 const PARSER_PERSIST_KEY = 'quizapp_teacher_parser_persist_v1';
 
@@ -69,6 +82,24 @@ type PersistedParserState = {
   parseResult: ParseResult | null;
   workingQuestions: WorkingQuestion[];
   savedAt: number;
+};
+
+/** Satu bagian (part) soal di daftar kerja + form buat ujian. */
+type PartGroup = {
+  title: string;
+  instruction?: string;
+  questions: WorkingQuestion[];
+};
+
+type CreateExamForm = {
+  title: string;
+  subject: string;
+  grade: string;
+  duration: number;
+  passingScore: number;
+  shuffleOptions: boolean;
+  shuffleQuestions: boolean;
+  publish: boolean;
 };
 
 function newEmptyWorkingQuestion(): WorkingQuestion {
@@ -128,6 +159,7 @@ function parsedToCreate(q: ParsedQuestion): CreateQuestionRequest {
 }
 
 export default function AIQuestionParserPage() {
+  const router = useRouter();
   const [inputText, setInputText] = useState('');
   /** data URL untuk parse vision (max 8, backend max 4MB/gambar) */
   const [parseImages, setParseImages] = useState<string[]>([]);
@@ -136,6 +168,10 @@ export default function AIQuestionParserPage() {
   const [inputMethod, setInputMethod] = useState<'text' | 'file' | 'json'>('text');
   const [jsonImportText, setJsonImportText] = useState('');
   const [isParsing, setIsParsing] = useState(false);
+  /** Mesin parsing: AI (otomatis dgn fallback) atau parser manual sistem. */
+  const [parseMode, setParseMode] = useState<ParseMode>('auto');
+  /** Detik berjalan selama parse (AI bisa 10–60 detik) */
+  const [parseElapsed, setParseElapsed] = useState(0);
   const [isSaving, setIsSaving] = useState(false);
   const [isJsonImporting, setIsJsonImporting] = useState(false);
   const [parseResult, setParseResult] = useState<ParseResult | null>(null);
@@ -145,6 +181,20 @@ export default function AIQuestionParserPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [editingId, setEditingId] = useState<string | null>(null);
   const [sideBySide, setSideBySide] = useState(false);
+
+  /** Dialog "Buat ujian langsung dari hasil parse" */
+  const [isCreateExamOpen, setIsCreateExamOpen] = useState(false);
+  const [isCreatingExam, setIsCreatingExam] = useState(false);
+  const [examForm, setExamForm] = useState<CreateExamForm>({
+    title: '',
+    subject: 'Matematika',
+    grade: '5',
+    duration: 60,
+    passingScore: 70,
+    shuffleOptions: true,
+    shuffleQuestions: false,
+    publish: true,
+  });
 
   const persistToLocal = useCallback(
     (partial: Partial<PersistedParserState> = {}) => {
@@ -197,8 +247,7 @@ export default function AIQuestionParserPage() {
     return () => clearTimeout(t);
   }, []);
 
-  const questionTypes: { value: QuestionType; label: string }[] = [
-    { value: 'multiple-choice', label: 'Multiple Choice' },
+  const questionTypes: { value: QuestionType; label: string }[] = [    { value: 'multiple-choice', label: 'Multiple Choice' },
     { value: 'true-false', label: 'True/False' },
     { value: 'short-answer', label: 'Short Answer' },
     { value: 'essay', label: 'Essay' },
@@ -206,6 +255,21 @@ export default function AIQuestionParserPage() {
     { value: 'fill-blank', label: 'Fill in the Blank' },
   ];
   const difficulties: DifficultyLevel[] = ['easy', 'medium', 'hard'];
+
+  /**
+   * Base UI menampilkan label item terpilih hanya bila <Select> diberi `items`;
+   * tanpa itu <SelectValue> mencetak nilai mentah (mis. "multiple-choice").
+   */
+  const questionTypeItems = useMemo(
+    () => Object.fromEntries(questionTypes.map((t) => [t.value, t.label])),
+    // questionTypes adalah array konstan per render
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    []
+  );
+  const gradeItems = useMemo(
+    () => Object.fromEntries(GRADE_OPTIONS.map((g) => [g.value, g.label])),
+    []
+  );
 
   const sampleText = `1. What is the process by which plants convert sunlight into energy?
 a) Respiration
@@ -223,6 +287,57 @@ b) x = 10
 c) x = 7
 d) x = 3
 Correct answer: a`;
+
+  /** Contoh format ujian dengan beberapa bagian (Bagian A/B) — dideteksi otomatis oleh parser. */
+  const sampleTextWithParts = `BAGIAN A: PILIHAN GANDA
+Pilihlah jawaban yang paling tepat!
+
+1. KPK dari 6 dan 8 adalah ....
+a) 24
+b) 36
+c) 40
+d) 48
+Correct answer: a
+
+2. FPB dari 12 dan 18 adalah ....
+a) 2
+b) 3
+c) 6
+d) 9
+Kunci: c
+
+BAGIAN B: ISIAN SINGKAT
+Isilah dengan jawaban yang singkat dan tepat!
+
+3. Bilangan prima terkecil adalah ....
+Kunci: 2
+
+4. Faktor persekutuan terbesar dari 15 dan 20 adalah ....
+Kunci: 5
+
+BAGIAN C: URAIAN
+Jawablah dengan jelas!
+
+5. Jelaskan apa yang dimaksud dengan KPK.
+Kunci: Kelipatan persekutuan terkecil dari dua bilangan atau lebih.
+
+6. Benar atau Salah: FPB selalu lebih kecil atau sama dengan bilangan terkecil.
+Kunci: Benar`;
+
+  /** Contoh format buku/panduan: **[PG-001]** + opsi A. + "- Kunci:" */
+  const sampleTextWithTags = `**[PG-001]** Perhatikan gambar gitar di atas. Bunyi pada gitar dihasilkan karena ....
+A. senar dipukul dengan stik
+B. senar bergetar saat dipetik
+C. senar ditiup angin
+D. senar dipanaskan matahari
+- Kunci: B
+- Pembahasan: Senar yang dipetik bergetar dan menghasilkan bunyi.
+
+**[IS-001]** Ibu kota Provinsi Jawa Barat adalah ....
+- Kunci: Bandung
+
+**[BS-001]** Pernyataan: "Air mengalir dari tempat tinggi ke tempat rendah."
+- Kunci: Benar`;
 
   const sampleImageUrl =
     'https://cdn1.katadata.co.id/media/images/thumb/2022/09/28/Ilustrasi_Sudut_Tumpul-2022_09_28-17_46_32_16532211a91aca6e17f261d048897db0_960x640_thumb.png';
@@ -374,6 +489,20 @@ Correct answer: $f'(x) = 6x - 4$`;
   }
 ]`;
 
+  // Timer + progress bar selama parse (AI bisa puluhan detik). Nilai awal
+  // di-reset di handleParse (event handler), bukan di dalam effect.
+  useEffect(() => {
+    if (!isParsing) return;
+    const started = Date.now();
+    const id = window.setInterval(() => {
+      setParseElapsed(Math.floor((Date.now() - started) / 1000));
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, [isParsing]);
+
+  /** Naik ke 90% dalam ~60 detik, lalu berhenti — tidak pernah "selesai" palsu. */
+  const parseProgressValue = Math.min(90, Math.round((parseElapsed / 60) * 90));
+
   const handleParse = useCallback(async () => {
     if (!inputText.trim() && parseImages.length === 0) return;
 
@@ -381,10 +510,12 @@ Correct answer: $f'(x) = 6x - 4$`;
     const textForParse = stripStandaloneMediaLines(inputText.trim());
     persistToLocal({ inputMethod, inputText, jsonImportText, sideBySide });
     setIsParsing(true);
+    setParseElapsed(0);
     try {
       const result = await parseQuestions(
         textForParse,
-        parseImages.length > 0 ? parseImages : undefined
+        parseImages.length > 0 ? parseImages : undefined,
+        parseMode
       );
       setParseResult(result);
 
@@ -460,6 +591,9 @@ Correct answer: $f'(x) = 6x - 4$`;
     pdfQuestionPageMap,
     persistToLocal,
     sideBySide,
+    // Tanpa ini, `parseMode` di closure tetap nilai awal ('auto') sehingga
+    // pilihan "Manual" di UI tidak pernah terkirim ke backend.
+    parseMode,
   ]);
 
   useEffect(() => {
@@ -477,7 +611,7 @@ Correct answer: $f'(x) = 6x - 4$`;
 
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [handleParse, inputMethod, inputText, isParsing, parseImages.length]);
+  }, [handleParse, inputMethod, inputText, jsonImportText, isParsing, parseImages.length, sideBySide, persistToLocal]);
 
   const handleSaveAll = async () => {
     if (!workingQuestions.length) return;
@@ -504,6 +638,189 @@ Correct answer: $f'(x) = 6x - 4$`;
       toast.error(e instanceof Error ? e.message : 'Gagal menyimpan ke bank soal');
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  /**
+   * Pengelompokan soal per bagian. Urutan mengikuti hasil deteksi parser
+   * (parseResult.parts), lalu bagian yang hanya muncul di soal.
+   */
+  const partGroups = useMemo<PartGroup[]>(() => {
+    const order: string[] = [];
+    const map = new Map<string, PartGroup>();
+    const addPart = (title: string, instruction?: string) => {
+      const key = title.trim();
+      if (!map.has(key)) {
+        order.push(key);
+        map.set(key, { title: key, instruction, questions: [] });
+      } else if (instruction && !map.get(key)!.instruction) {
+        map.get(key)!.instruction = instruction;
+      }
+      return map.get(key)!;
+    };
+    (parseResult?.parts ?? []).forEach((p) => addPart(p.title, p.instruction));
+    workingQuestions.forEach((q) => addPart(q.part ?? '', q.partInstruction).questions.push(q));
+    return order.map((k) => map.get(k)!);
+  }, [parseResult, workingQuestions]);
+
+  /** Daftar judul bagian yang sudah ada (untuk pemindahan soal). */
+  const partTitles = useMemo(() => partGroups.map((g) => g.title), [partGroups]);
+
+  /** items untuk Select "pindah bagian" — tanpa ini Base UI mencetak UUID bagian. */
+  const partSelectItems = useMemo(
+    () => ({
+      __none__: 'Tanpa bagian',
+      ...Object.fromEntries(partTitles.filter((t) => t.trim()).map((t) => [t, t])),
+      __new__: '＋ Bagian baru…',
+    }),
+    [partTitles]
+  );
+
+  const selectedRows = useMemo(
+    () => workingQuestions.filter((q) => selectedIds.has(q.id) || selectedIds.size === 0),
+    [workingQuestions, selectedIds]
+  );
+
+  /** Judul usulan untuk ujian baru, diambil dari soal pertama. */
+  const defaultExamTitle = useCallback(() => {
+    const first = workingQuestions[0]?.content ?? '';
+    const snippet = first.split('\n')[0].trim().slice(0, 60);
+    return snippet ? `Ujian — ${snippet}` : 'Ujian Baru';
+  }, [workingQuestions]);
+
+  const moveQuestionToPart = (id: string, part: string) => {
+    updateQuestion(id, { part });
+  };
+
+  const createNewPartForQuestion = (id: string) => {
+    const used = new Set(partTitles.map((t) => t.trim()));
+    let n = partTitles.length;
+    let title = '';
+    do {
+      title = `Bagian ${String.fromCharCode(65 + (n % 26))}`;
+      n++;
+    } while (used.has(title) && n < partTitles.length + 30);
+    updateQuestion(id, { part: title });
+  };
+
+  /**
+   * Alur utama yang diminta: hasil parse → langsung jadi ujian (opsional
+   * langsung dipublikasikan), dengan soal dikelompokkan per bagian.
+   */
+  const handleCreateExam = async () => {
+    if (!workingQuestions.length) return;
+    if (!selectedRows.length) {
+      toast.error('Pilih minimal satu soal untuk dijadikan ujian.');
+      return;
+    }
+    const title = examForm.title.trim();
+    if (!title) {
+      toast.error('Judul ujian wajib diisi.');
+      return;
+    }
+    if (!examForm.subject.trim() || !examForm.grade.trim()) {
+      toast.error('Mata pelajaran dan kelas wajib diisi.');
+      return;
+    }
+
+    setIsCreatingExam(true);
+    try {
+      const payload = selectedRows.map((w) => parsedToCreate(toParsedQuestion(w)));
+      const imported = await questionsApi.import(payload);
+      if (!imported.imported) {
+        const detail = (imported.failed ?? []).map((f) => `#${f.index}: ${f.error}`).join(' · ');
+        toast.error(`Tidak ada soal yang bisa disimpan${detail ? ` — ${detail}` : ''}`);
+        return;
+      }
+
+      // Susun bagian dari soal yang BERHASIL dibuat (urutan backend = urutan baris yang sukses).
+      const failedIdx = new Set((imported.failed ?? []).map((f) => f.index));
+      const instructions = new Map<string, string>();
+      (parseResult?.parts ?? []).forEach((p) => instructions.set(p.title.trim(), p.instruction ?? ''));
+      selectedRows.forEach((w) => {
+        const key = (w.part ?? '').trim();
+        if (key && !instructions.get(key) && w.partInstruction) {
+          instructions.set(key, w.partInstruction);
+        }
+      });
+
+      const partOrder: string[] = [];
+      const partQuestionIds = new Map<string, string[]>();
+      let createdIdx = 0;
+      selectedRows.forEach((w, i) => {
+        if (failedIdx.has(i)) return;
+        const created = imported.questions[createdIdx++];
+        if (!created) return;
+        const key = (w.part ?? '').trim();
+        if (!partQuestionIds.has(key)) {
+          partOrder.push(key);
+          partQuestionIds.set(key, []);
+        }
+        partQuestionIds.get(key)!.push(created.id);
+      });
+
+      const questionIds = partOrder.flatMap((k) => partQuestionIds.get(k) ?? []);
+      const needsParts = partOrder.length > 1 || (partOrder.length === 1 && partOrder[0] !== '');
+      const partsPayload: ExamPartRequest[] | undefined = needsParts
+        ? partOrder.map((k, i) => ({
+            title: k || `Bagian ${String.fromCharCode(65 + i)}`,
+            description: instructions.get(k) || undefined,
+            question_ids: partQuestionIds.get(k) ?? [],
+          }))
+        : undefined;
+
+      const exam = await examsApi.create({
+        title,
+        subject: examForm.subject.trim(),
+        grade: examForm.grade.trim(),
+        config: {
+          duration: examForm.duration,
+          shuffleQuestions: examForm.shuffleQuestions,
+          shuffleOptions: examForm.shuffleOptions,
+          showResults: 'after-review',
+          allowReview: true,
+          maxAttempts: 1,
+          passingScore: examForm.passingScore,
+          securityEnabled: true,
+          maxViolations: 3,
+          requireFullscreen: true,
+          blockCopyPaste: true,
+          detectFocusLoss: true,
+        },
+        ...(partsPayload ? { parts: partsPayload } : { question_ids: questionIds }),
+      });
+
+      let publishWarning = '';
+      if (examForm.publish) {
+        try {
+          await examsApi.publish(exam.id);
+        } catch (pubErr) {
+          publishWarning = pubErr instanceof Error ? pubErr.message : 'gagal publikasi';
+        }
+      }
+
+      const partInfo = needsParts ? ` dalam ${partOrder.length} bagian` : '';
+      if (imported.failed?.length) {
+        const detail = imported.failed.map((f) => `#${f.index}: ${f.error}`).join(' · ');
+        toast.warning(
+          `Ujian dibuat dengan ${imported.imported} soal${partInfo}; ${imported.failed.length} soal gagal disimpan. ${detail}`
+        );
+      } else if (publishWarning) {
+        toast.warning(`Ujian dibuat (draft) dengan ${imported.imported} soal${partInfo}. Publikasi gagal: ${publishWarning}`);
+      } else {
+        toast.success(
+          examForm.publish
+            ? `Ujian "${title}" dibuat & dipublikasikan dengan ${imported.imported} soal${partInfo}.`
+            : `Ujian "${title}" dibuat sebagai draft dengan ${imported.imported} soal${partInfo}.`
+        );
+      }
+
+      setIsCreateExamOpen(false);
+      router.push(`/teacher/exams/${exam.id}/edit`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Gagal membuat ujian');
+    } finally {
+      setIsCreatingExam(false);
     }
   };
 
@@ -833,6 +1150,34 @@ Correct answer: $f'(x) = 6x - 4$`;
                           size="sm"
                           type="button"
                           onClick={() => {
+                            setInputText(sampleTextWithParts);
+                            toast.message('Contoh soal per bagian dimuat', {
+                              description:
+                                'Bagian A (pilihan ganda), Bagian B (isian singkat), Bagian C (uraian). Bagian ini otomatis jadi “part” di ujian.',
+                            });
+                          }}
+                        >
+                          Contoh soal per bagian (A/B/C)
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          type="button"
+                          onClick={() => {
+                            setInputText(sampleTextWithTags);
+                            toast.message('Contoh format buku dimuat', {
+                              description:
+                                'Penanda **[PG-001]** / **[IS-001]** / **[BS-001]**, opsi A., dan “- Kunci:”.',
+                            });
+                          }}
+                        >
+                          Contoh format buku [PG-001]
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          type="button"
+                          onClick={() => {
                             setInputText(sampleTextWithMath);
                             toast.message('Contoh notasi matematika dimuat', {
                               description:
@@ -972,6 +1317,45 @@ Correct answer: $f'(x) = 6x - 4$`;
                     </TabsContent>
                   </Tabs>
 
+                  {/* Pilihan mesin parsing: AI atau parser manual sistem */}
+                  <div className="rounded-lg border border-border bg-muted/30 p-3">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <Label className="text-sm">Mesin parsing</Label>
+                        <p className="text-xs text-muted-foreground">
+                          {parseMode === 'auto' &&
+                            'AI memproses soal; kalau AI gagal/tanpa API key, parser aturan sistem dipakai otomatis.'}
+                          {parseMode === 'ai' && 'Hanya AI yang dipakai (butuh API key di backend).'}
+                          {parseMode === 'manual' &&
+                            'Hanya parser aturan sistem — tanpa memanggil AI, hasil instan, tidak perlu API key.'}
+                        </p>
+                      </div>
+                      <Select
+                        items={{
+                          auto: 'AI (otomatis + cadangan)',
+                          ai: 'AI saja',
+                          manual: 'Manual (parser aturan sistem)',
+                        }}
+                        value={parseMode}
+                        onValueChange={(v) => setParseMode((v ?? 'auto') as ParseMode)}
+                      >
+                        <SelectTrigger className="w-full sm:w-[260px]" aria-label="Mesin parsing">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="auto">AI (otomatis + cadangan)</SelectItem>
+                          <SelectItem value="ai">AI saja</SelectItem>
+                          <SelectItem value="manual">Manual (parser aturan sistem)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    {parseMode === 'manual' && parseImages.length > 0 && (
+                      <p className="mt-2 text-xs text-destructive">
+                        Parser manual tidak bisa membaca gambar. Pilih mode AI atau hapus lampiran gambar.
+                      </p>
+                    )}
+                  </div>
+
                   <div className="flex items-center justify-between pt-4 border-t">
                     <div className="text-sm text-muted-foreground">
                       {inputMethod !== 'json' && (inputText.length > 0 || parseImages.length > 0) && (
@@ -1023,11 +1407,23 @@ Correct answer: $f'(x) = 6x - 4$`;
                       <div className="flex items-center gap-3">
                         <Loader2 className="w-5 h-5 animate-spin text-primary" />
                         <div>
-                          <p className="font-medium">AI is analyzing your questions...</p>
-                          <p className="text-sm text-muted-foreground">This usually takes a few seconds</p>
+                          <p className="font-medium">
+                            AI sedang menganalisis soal
+                            {parseImages.length > 0 ? ' & gambar' : ''}…
+                          </p>
+                          <p className="text-sm text-muted-foreground">
+                            {parseElapsed}s berjalan
+                            {parseImages.length > 0
+                              ? ' — mode gambar biasanya 20–90 detik.'
+                              : ' — biasanya 10–60 detik untuk model penalaran.'}
+                          </p>
                         </div>
                       </div>
-                      <Progress value={66} className="h-2" />
+                      <Progress value={parseProgressValue} className="h-2" />
+                      <p className="text-xs text-muted-foreground">
+                        Jangan tutup halaman ini. Kalau AI gagal/tidak tersedia, parser teks otomatis
+                        dipakai sebagai cadangan.
+                      </p>
                     </div>
                   </CardContent>
                 </Card>
@@ -1060,9 +1456,25 @@ Correct answer: $f'(x) = 6x - 4$`;
                           <CheckCircle2 className="w-5 h-5 text-green-500" />
                           Parsed Questions
                         </CardTitle>
-                        <CardDescription>
-                          {workingQuestions.length} soal dalam daftar kerja — centang yang akan disimpan, edit lalu simpan ke
-                          bank. Gambar/unggahan disimpan sebagai URL HTTPS; murid melihatnya di halaman ujian jika Cloudinary aktif.
+                        <CardDescription className="flex flex-wrap items-center gap-2">
+                          <span>
+                            {workingQuestions.length} soal dalam daftar kerja — centang yang akan disimpan, edit lalu simpan ke
+                            bank.
+                          </span>
+                          {parseResult.engine && (
+                            <Badge
+                              variant="outline"
+                              className={
+                                parseResult.engine === 'ai'
+                                  ? 'bg-violet-500/10 text-violet-600 border-violet-500/30'
+                                  : 'bg-sky-500/10 text-sky-600 border-sky-500/30'
+                              }
+                            >
+                              {parseResult.engine === 'ai'
+                                ? 'Diparse dengan AI'
+                                : 'Diparse dengan parser manual (aturan)'}
+                            </Badge>
+                          )}
                         </CardDescription>
                       </div>
                       <div className="flex flex-wrap items-center gap-2">
@@ -1077,9 +1489,12 @@ Correct answer: $f'(x) = 6x - 4$`;
                           Kosongkan pilihan
                         </Button>
                         <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="gap-2"
                           onClick={handleSaveAll}
                           disabled={isSaving || workingQuestions.length === 0}
-                          className="gap-2"
                         >
                           {isSaving ? (
                             <Loader2 className="w-4 h-4 animate-spin" />
@@ -1087,6 +1502,22 @@ Correct answer: $f'(x) = 6x - 4$`;
                             <Save className="w-4 h-4" />
                           )}
                           Simpan ke bank
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="gap-2"
+                          onClick={() => {
+                            setExamForm((f) => ({
+                              ...f,
+                              title: f.title.trim() ? f.title : defaultExamTitle(),
+                            }));
+                            setIsCreateExamOpen(true);
+                          }}
+                          disabled={workingQuestions.length === 0}
+                        >
+                          <GraduationCap className="w-4 h-4" />
+                          Buat ujian
                         </Button>
                       </div>
                     </div>
@@ -1120,8 +1551,32 @@ Correct answer: $f'(x) = 6x - 4$`;
                       </Alert>
                     )}
 
-                    <div className="space-y-4">
-                      {workingQuestions.map((q, index) => {
+                    <div className="space-y-5">
+                      {partGroups.map((group) => (
+                        <div
+                          key={group.title || '__no_part__'}
+                          className="space-y-3 rounded-xl border border-border/70 bg-muted/10 p-3"
+                        >
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Layers className="h-4 w-4 text-primary" />
+                            <span className="text-sm font-semibold">
+                              {group.title || 'Tanpa bagian'}
+                            </span>
+                            <Badge variant="outline">{group.questions.length} soal</Badge>
+                            {group.instruction ? (
+                              <span className="truncate text-xs text-muted-foreground">
+                                {group.instruction}
+                              </span>
+                            ) : null}
+                          </div>
+
+                          {group.questions.map((q) => {
+                        const index = workingQuestions.findIndex((w) => w.id === q.id);
+                        const prevQ = index > 0 ? workingQuestions[index - 1] : undefined;
+                        const nextQ =
+                          index < workingQuestions.length - 1 ? workingQuestions[index + 1] : undefined;
+                        const canMoveUp = Boolean(prevQ && (prevQ.part ?? '') === (q.part ?? ''));
+                        const canMoveDown = Boolean(nextQ && (nextQ.part ?? '') === (q.part ?? ''));
                         const correctStr = Array.isArray(q.correctAnswer)
                           ? q.correctAnswer.join('; ')
                           : String(q.correctAnswer ?? '');
@@ -1152,6 +1607,30 @@ Correct answer: $f'(x) = 6x - 4$`;
                                         {q.difficulty}
                                       </Badge>
                                       <Badge variant="outline">{q.points} pts</Badge>
+                                      <Select
+                                        items={partSelectItems}
+                                        value={q.part && partTitles.includes(q.part) ? q.part : '__none__'}
+                                        onValueChange={(v) => {
+                                          if (String(v) === '__new__') createNewPartForQuestion(q.id);
+                                          else if (String(v) === '__none__') moveQuestionToPart(q.id, '');
+                                          else moveQuestionToPart(q.id, String(v));
+                                        }}
+                                      >
+                                        <SelectTrigger className="h-7 w-[170px] text-xs" title="Pindah bagian">
+                                          <SelectValue placeholder="Bagian" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          <SelectItem value="__none__">Tanpa bagian</SelectItem>
+                                          {partTitles
+                                            .filter((t) => t.trim())
+                                            .map((t) => (
+                                              <SelectItem key={t} value={t}>
+                                                {t}
+                                              </SelectItem>
+                                            ))}
+                                          <SelectItem value="__new__">＋ Bagian baru…</SelectItem>
+                                        </SelectContent>
+                                      </Select>
                                     </div>
                                     <div className="flex flex-wrap items-center gap-1">
                                       <Button
@@ -1160,7 +1639,7 @@ Correct answer: $f'(x) = 6x - 4$`;
                                         size="icon"
                                         className="h-8 w-8"
                                         onClick={() => moveQuestion(q.id, -1)}
-                                        disabled={index === 0}
+                                        disabled={!canMoveUp}
                                         title="Naik"
                                       >
                                         <ChevronUp className="h-4 w-4" />
@@ -1171,7 +1650,7 @@ Correct answer: $f'(x) = 6x - 4$`;
                                         size="icon"
                                         className="h-8 w-8"
                                         onClick={() => moveQuestion(q.id, 1)}
-                                        disabled={index === workingQuestions.length - 1}
+                                        disabled={!canMoveDown}
                                         title="Turun"
                                       >
                                         <ChevronDown className="h-4 w-4" />
@@ -1215,6 +1694,7 @@ Correct answer: $f'(x) = 6x - 4$`;
                                         <div>
                                           <Label>Tipe</Label>
                                           <Select
+                                            items={questionTypeItems}
                                             value={q.type}
                                             onValueChange={(v) => {
                                               const t = v as QuestionType;
@@ -1467,6 +1947,8 @@ Correct answer: $f'(x) = 6x - 4$`;
                           </Card>
                         );
                       })}
+                        </div>
+                      ))}
                     </div>
                   </CardContent>
                 </Card>
@@ -1475,6 +1957,179 @@ Correct answer: $f'(x) = 6x - 4$`;
           </div>
         </main>
       </div>
+
+      {/* Dialog: buat ujian langsung dari hasil parse */}
+      <Dialog open={isCreateExamOpen} onOpenChange={setIsCreateExamOpen}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <GraduationCap className="w-5 h-5 text-primary" />
+              Buat ujian dari hasil parse
+            </DialogTitle>
+            <DialogDescription>
+              {selectedRows.length} soal akan disimpan ke bank soal lalu langsung dijadikan ujian
+              {partGroups.filter((g) => g.questions.length > 0).length > 1
+                ? ` dengan ${partGroups.filter((g) => g.questions.length > 0).length} bagian soal.`
+                : '.'}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="exam-title">Judul ujian *</Label>
+              <Input
+                id="exam-title"
+                value={examForm.title}
+                onChange={(e) => setExamForm((f) => ({ ...f, title: e.target.value }))}
+                placeholder="mis. KPK & FPB Kelas 5 — Paket 1"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="exam-subject">Mata pelajaran *</Label>
+                <Input
+                  id="exam-subject"
+                  list="parser-subject-options"
+                  value={examForm.subject}
+                  onChange={(e) => setExamForm((f) => ({ ...f, subject: e.target.value }))}
+                  placeholder="Matematika / IPAS"
+                />
+                <datalist id="parser-subject-options">
+                  <option value="Matematika" />
+                  <option value="IPAS" />
+                  <option value="Bahasa Indonesia" />
+                  <option value="IPA" />
+                  <option value="IPS" />
+                  <option value="PPKn" />
+                  <option value="Bahasa Inggris" />
+                </datalist>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="exam-grade">Kelas *</Label>
+                <Select
+                  items={gradeItems}
+                  value={examForm.grade}
+                  onValueChange={(v) => setExamForm((f) => ({ ...f, grade: String(v) }))}
+                >
+                  <SelectTrigger id="exam-grade">
+                    <SelectValue placeholder="Pilih kelas" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {GRADE_OPTIONS.map((g) => (
+                      <SelectItem key={g.value} value={g.value}>
+                        {g.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="exam-duration">Durasi (menit)</Label>
+                <Input
+                  id="exam-duration"
+                  type="number"
+                  min={1}
+                  value={examForm.duration}
+                  onChange={(e) =>
+                    setExamForm((f) => ({ ...f, duration: Number(e.target.value) || 60 }))
+                  }
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="exam-passing">Nilai lulus (%)</Label>
+                <Input
+                  id="exam-passing"
+                  type="number"
+                  min={0}
+                  max={100}
+                  value={examForm.passingScore}
+                  onChange={(e) =>
+                    setExamForm((f) => ({ ...f, passingScore: Number(e.target.value) || 70 }))
+                  }
+                />
+              </div>
+            </div>
+
+            <div className="space-y-3 rounded-lg border border-border bg-muted/30 p-3">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-medium">Acak urutan soal</p>
+                  <p className="text-xs text-muted-foreground">
+                    Soal tetap di dalam bagiannya masing-masing.
+                  </p>
+                </div>
+                <Switch
+                  checked={examForm.shuffleQuestions}
+                  onCheckedChange={(v) => setExamForm((f) => ({ ...f, shuffleQuestions: Boolean(v) }))}
+                />
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-medium">Acak pilihan jawaban</p>
+                  <p className="text-xs text-muted-foreground">
+                    Urutan opsi diacak per murid (kunci mengikuti opsi).
+                  </p>
+                </div>
+                <Switch
+                  checked={examForm.shuffleOptions}
+                  onCheckedChange={(v) => setExamForm((f) => ({ ...f, shuffleOptions: Boolean(v) }))}
+                />
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-medium">Langsung publikasikan</p>
+                  <p className="text-xs text-muted-foreground">
+                    Matikan bila ingin menyimpan sebagai draft dulu.
+                  </p>
+                </div>
+                <Switch
+                  checked={examForm.publish}
+                  onCheckedChange={(v) => setExamForm((f) => ({ ...f, publish: Boolean(v) }))}
+                />
+              </div>
+            </div>
+
+            {partGroups.filter((g) => g.questions.length > 0).length > 1 ? (
+              <div className="rounded-lg border border-primary/30 bg-primary/5 p-3">
+                <p className="mb-2 text-xs font-medium">Bagian yang akan dibuat:</p>
+                <ul className="space-y-1 text-xs text-muted-foreground">
+                  {partGroups
+                    .filter((g) => g.questions.length > 0)
+                    .map((g, i) => (
+                      <li key={g.title || `none-${i}`}>
+                        • <span className="font-medium text-foreground">{g.title || `Bagian ${String.fromCharCode(65 + i)}`}</span>{' '}
+                        — {g.questions.length} soal
+                      </li>
+                    ))}
+                </ul>
+              </div>
+            ) : null}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsCreateExamOpen(false)} disabled={isCreatingExam}>
+              Batal
+            </Button>
+            <Button onClick={handleCreateExam} disabled={isCreatingExam}>
+              {isCreatingExam ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Membuat ujian…
+                </>
+              ) : (
+                <>
+                  <GraduationCap className="mr-2 h-4 w-4" />
+                  {examForm.publish ? 'Buat & publikasikan' : 'Buat draft ujian'}
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </TeacherNav>
   );
 }

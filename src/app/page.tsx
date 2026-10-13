@@ -23,7 +23,9 @@ export default function Home() {
   useEffect(() => {
     if (!isLoading && user) {
       // Redirect based on role
-      if (user.role === 'teacher') {
+      if (user.role === 'admin') {
+        router.push('/admin/dashboard');
+      } else if (user.role === 'teacher') {
         router.push('/teacher/dashboard');
       } else {
         router.push('/student/dashboard');

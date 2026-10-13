@@ -33,6 +33,10 @@ export interface Question {
   /** Semua URL (legacy / ringkasan); string[] lama = dianggap below */
   imageUrls?: string[];
   categoryId?: string;
+  /** Bagian ujian (exam part) tempat soal ini berada, saat dibaca dari sebuah ujian */
+  partId?: string;
+  /** Poin khusus di ujian ini (bisa berbeda dari poin di bank soal) */
+  examPoints?: number;
   createdBy: string;
   createdAt: Date;
   updatedAt: Date;
@@ -68,6 +72,15 @@ export interface ExamConfig {
   detectFocusLoss: boolean;
 }
 
+/** Bagian/part soal dalam satu ujian (mis. "Bagian A — Pilihan Ganda") */
+export interface ExamPart {
+  id: string;
+  title: string;
+  description?: string;
+  orderIndex: number;
+  questionCount?: number;
+}
+
 export interface Exam {
   id: string;
   title: string;
@@ -83,6 +96,8 @@ export interface Exam {
   createdAt: Date;
   updatedAt: Date;
   questionCount?: number;
+  /** Bagian-bagian ujian; kosong = ujian tanpa bagian */
+  parts?: ExamPart[];
 }
 
 // Exam Session Types
@@ -208,13 +223,26 @@ export interface ParsedQuestion {
   tags: string[];
   images?: QuestionImage[];
   imageUrls?: string[];
+  /** Bagian/section hasil deteksi parser (mis. "Bagian A: Pilihan Ganda") */
+  part?: string;
+  /** Instruksi bagian ("Pilihlah jawaban yang paling tepat!") */
+  partInstruction?: string;
+}
+
+/** Bagian/section yang terdeteksi parser dari teks soal */
+export interface ParsedPart {
+  title: string;
+  instruction?: string;
 }
 
 export interface ParseResult {
   success: boolean;
   questions: ParsedQuestion[];
+  parts?: ParsedPart[];
   errors?: string[];
   warnings?: string[];
+  /** Mesin yang benar-benar dipakai backend: "ai" atau "manual". */
+  engine?: 'ai' | 'manual';
 }
 
 // Category Types

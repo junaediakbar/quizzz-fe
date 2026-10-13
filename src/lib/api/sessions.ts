@@ -7,6 +7,15 @@ export interface StartSessionRequest {
   exam_id: string;
 }
 
+/** Bagian ujian yang dikirim backend saat sesi dimulai */
+export interface SessionPart {
+  id: string;
+  title: string;
+  description?: string;
+  orderIndex: number;
+  questionCount: number;
+}
+
 export interface StartSessionResponse {
   /** true jika murid sudah pernah submit — tidak ada soal untuk dikerjakan lagi */
   already_completed?: boolean;
@@ -20,6 +29,19 @@ export interface StartSessionResponse {
   answers?: Record<string, string>;
   score?: number | null;
   security?: ExamSecuritySettings;
+  /** Bagian-bagian soal (kosong bila ujian tidak punya bagian) */
+  parts?: SessionPart[];
+  /** Percobaan ke-berapa (1-based) */
+  attemptNumber?: number;
+}
+
+/** Satu pelanggaran integritas yang dicatat selama ujian */
+export interface ProctoringEvent {
+  id: string;
+  sessionId: string;
+  eventType: string;
+  detail?: Record<string, unknown>;
+  createdAt: string;
 }
 
 export interface SubmitAnswerRequest {
@@ -41,6 +63,8 @@ export const sessionsApi = {
       answers?: Record<string, string>;
       score?: number | null;
       security?: Record<string, unknown>;
+      parts?: Record<string, unknown>[];
+      attempt_number?: number;
     }>('/sessions', data);
     if (raw.already_completed) {
       return {
@@ -64,6 +88,14 @@ export const sessionsApi = {
       started_at: raw.started_at ?? new Date().toISOString(),
       answers: raw.answers,
       security: mapSecurityFromApi(raw.security),
+      attemptNumber: raw.attempt_number,
+      parts: (raw.parts || []).map((p) => ({
+        id: String(p.id ?? ''),
+        title: String(p.title ?? ''),
+        description: p.description ? String(p.description) : undefined,
+        orderIndex: Number(p.order_index ?? 0),
+        questionCount: Number(p.question_count ?? 0),
+      })),
     };
   },
 
@@ -75,8 +107,34 @@ export const sessionsApi = {
     return put(`/sessions/${id}/answer`, data);
   },
 
-  submitExam: async (id: string): Promise<{ result_id: string }> => {
+  submitExam: async (id: string): Promise<{ result_id: string; time_exceeded?: boolean }> => {
     return put(`/sessions/${id}/submit`);
+  },
+
+  /** Pelanggaran integritas yang tercatat pada sebuah sesi (guru pemilik ujian / murid). */
+  getProctoringEvents: async (sessionId: string): Promise<ProctoringEvent[]> => {
+    const raw = await get<{ events?: Record<string, unknown>[] }>(
+      `/sessions/${sessionId}/proctoring-events`
+    );
+    return (raw.events || []).map((e) => {
+      let detail: Record<string, unknown> | undefined;
+      if (typeof e.detail === 'string' && e.detail) {
+        try {
+          detail = JSON.parse(e.detail) as Record<string, unknown>;
+        } catch {
+          detail = undefined;
+        }
+      } else if (e.detail && typeof e.detail === 'object') {
+        detail = e.detail as Record<string, unknown>;
+      }
+      return {
+        id: String(e.id ?? ''),
+        sessionId: String(e.session_id ?? sessionId),
+        eventType: String(e.event_type ?? ''),
+        detail,
+        createdAt: String(e.created_at ?? ''),
+      };
+    });
   },
 
   getResult: async (id: string): Promise<ExamResult> => {

@@ -170,10 +170,12 @@ export default function StudentDashboardPage() {
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Upcoming Exams */}
-          <div className="lg:col-span-2 space-y-4">
+          <div id="jadwal-ujian" className="lg:col-span-2 space-y-4 scroll-mt-20">
             <div className="flex items-center justify-between">
-              <h3 className="text-xl font-semibold">Upcoming Exams</h3>
-              <Button variant="outline" size="sm">View All</Button>
+              <h3 className="text-xl font-semibold">Ujian Akan Datang</h3>
+              <Button variant="outline" size="sm" asChild>
+                <Link href="/student/results">Riwayat &amp; Hasil</Link>
+              </Button>
             </div>
 
             <div className="space-y-4">

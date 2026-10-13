@@ -9,24 +9,55 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import {
   GraduationCap,
+  Loader2,
   Mail,
   User,
   Calendar,
-  Award,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
+import { authApi } from '@/lib/api';
+import { toast } from 'sonner';
 
 export default function StudentProfilePage() {
-  const { user, logout } = useAuth();
+  const { user, logout, refreshUser } = useAuth();
   const router = useRouter();
   const [isEditing, setIsEditing] = useState(false);
-  const [name, setName] = useState(user?.name || '');
-  const [email, setEmail] = useState(user?.email || '');
+  const [isSaving, setIsSaving] = useState(false);
+  // null = follow the current user; a string = unsaved edit.
+  const [draftName, setDraftName] = useState<string | null>(null);
+  const name = draftName ?? user?.name ?? '';
+  const email = user?.email ?? '';
 
-  const handleSave = () => {
-    // TODO: Update user profile via API
+  const startEditing = () => {
+    setDraftName(user?.name ?? '');
+    setIsEditing(true);
+  };
+
+  const cancelEditing = () => {
+    setDraftName(null);
     setIsEditing(false);
+  };
+
+  const handleSave = async () => {
+    const trimmedName = name.trim();
+    if (!trimmedName) {
+      toast.error('Nama tidak boleh kosong');
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      await authApi.updateProfile({ name: trimmedName });
+      await refreshUser();
+      setDraftName(null);
+      toast.success('Profil berhasil diperbarui');
+      setIsEditing(false);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Gagal memperbarui profil');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -77,7 +108,7 @@ export default function StudentProfilePage() {
                       <Input
                         id="name"
                         value={name}
-                        onChange={(e) => setName(e.target.value)}
+                        onChange={(e) => setDraftName(e.target.value)}
                         className="flex-1"
                       />
                     ) : (
@@ -95,7 +126,8 @@ export default function StudentProfilePage() {
                         id="email"
                         type="email"
                         value={email}
-                        onChange={(e) => setEmail(e.target.value)}
+                        disabled
+                        title="Email tidak dapat diubah"
                         className="flex-1"
                       />
                     ) : (
@@ -144,17 +176,22 @@ export default function StudentProfilePage() {
             <div className="flex items-center gap-3 pt-4 border-t">
               {isEditing ? (
                 <>
-                  <Button onClick={handleSave}>Save Changes</Button>
-                  <Button variant="outline" onClick={() => {
-                    setIsEditing(false);
-                    setName(user?.name || '');
-                    setEmail(user?.email || '');
-                  }}>
+                  <Button onClick={handleSave} disabled={isSaving}>
+                    {isSaving ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Menyimpan…
+                      </>
+                    ) : (
+                      'Save Changes'
+                    )}
+                  </Button>
+                  <Button variant="outline" onClick={cancelEditing}>
                     Cancel
                   </Button>
                 </>
               ) : (
-                <Button onClick={() => setIsEditing(true)}>Edit Profile</Button>
+                <Button onClick={startEditing}>Edit Profile</Button>
               )}
               <Button variant="outline" className="ml-auto text-red-500 hover:text-red-600" onClick={logout}>
                 Logout

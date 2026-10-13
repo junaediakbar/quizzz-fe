@@ -17,3 +17,20 @@ export interface RequestOptions {
   headers?: Record<string, string>;
   params?: Record<string, string>;
 }
+
+/** Metadata pagination yang dikirim semua endpoint list. */
+export interface ListPageMeta {
+  /** Jumlah baris pada respons ini (bukan total). */
+  count: number;
+  /** Jumlah seluruh baris yang cocok dengan filter. */
+  total: number;
+  /** 0 = tanpa batas. */
+  limit: number;
+  offset: number;
+  hasMore: boolean;
+}
+
+export interface ListQuery {
+  limit?: number;
+  offset?: number;
+}

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -35,7 +35,7 @@ import { MathText } from '@/components/shared/math-text';
 import { stripMediaMarkersFromText } from '@/lib/question-images';
 import { cn, formatCountdown, clampSeconds } from '@/lib/utils';
 import { Question } from '@/lib/types';
-import { examsApi, sessionsApi } from '@/lib/api';
+import { examsApi, sessionsApi, type SessionPart } from '@/lib/api';
 import {
   DEFAULT_EXAM_SECURITY,
   securityFromExamConfig,
@@ -76,6 +76,8 @@ export default function ExamPage() {
   const [online, setOnline] = useState(true);
   const [security, setSecurity] = useState<ExamSecuritySettings>(DEFAULT_EXAM_SECURITY);
   const [mobileNavigatorOpen, setMobileNavigatorOpen] = useState(false);
+  /** Bagian-bagian soal (kosong bila ujian tidak dibagi per bagian) */
+  const [examParts, setExamParts] = useState<SessionPart[]>([]);
 
   // Load exam metadata only (PRD: agree rules → fullscreen → start session)
   useEffect(() => {
@@ -151,16 +153,44 @@ export default function ExamPage() {
       setSessionId(s.session_id);
       setExamTitle(s.exam_title || examTitle);
       setExamQuestions(s.questions);
+      setExamParts(s.parts ?? []);
       setDurationMin(s.duration || durationMin);
       if (s.security) setSecurity(s.security);
       if (s.answers && typeof s.answers === 'object') {
         setAnswers((prev) => ({ ...prev, ...s.answers }));
       }
-      const startMs = new Date(s.started_at).getTime();
+
+      // Pulihkan draf lokal (mis. jawaban diisi saat koneksi terputus) lalu
+      // sinkronkan ke server. Jawaban dari server selalu dianggap lebih baru.
+      try {
+        const raw = localStorage.getItem(LS_PREFIX + s.session_id);
+        const saved = raw ? (JSON.parse(raw) as { answers?: Record<string, string> }) : null;
+        const local = saved?.answers && typeof saved.answers === 'object' ? saved.answers : {};
+        const server = (s.answers && typeof s.answers === 'object' ? s.answers : {}) as Record<string, string>;
+        const knownIds = new Set((s.questions || []).map((q) => q.id));
+        const toRestore = Object.entries(local).filter(
+          ([qid, ans]) => knownIds.has(qid) && !(qid in server) && typeof ans === 'string' && ans.trim() !== ''
+        );
+        if (toRestore.length > 0) {
+          setAnswers((prev) => ({ ...prev, ...Object.fromEntries(toRestore) }));
+          toast.info(`${toRestore.length} jawaban dari penyimpanan lokal dipulihkan.`);
+          void Promise.all(
+            toRestore.map(([qid, ans]) =>
+              sessionsApi.submitAnswer(s.session_id, { question_id: qid, answer: ans }).catch(() => {})
+            )
+          );
+        }
+      } catch {
+        /* draf lokal rusak — abaikan */
+      }
+      // Jam server bisa berbeda dari jam perangkat murid. Batasi waktu mulai ke
+      // "sekarang" supaya selisih jam tidak pernah MEMBERI waktu ekstra, dan
+      // sisa waktu tidak pernah melebihi durasi ujian.
+      const rawStart = new Date(s.started_at).getTime();
       const durationSec = (s.duration || 60) * 60;
-      const endMs =
-        Number.isFinite(startMs) ? startMs + durationSec * 1000 : Date.now() + durationSec * 1000;
-      const remain = clampSeconds(Math.floor((endMs - Date.now()) / 1000));
+      const startMs = Number.isFinite(rawStart) ? Math.min(rawStart, Date.now()) : Date.now();
+      const endMs = startMs + durationSec * 1000;
+      const remain = clampSeconds(Math.min(durationSec, Math.floor((endMs - Date.now()) / 1000)));
       setExamDeadlineMs(endMs);
       setTimeRemaining(remain);
       setPhase('active');
@@ -184,6 +214,43 @@ export default function ExamPage() {
   const answeredCount = Object.keys(answers).filter((k) => answers[k]?.trim()).length;
   const progress =
     examQuestions.length > 0 ? (answeredCount / examQuestions.length) * 100 : 0;
+
+  /** Part (bagian) untuk sebuah soal, berdasarkan part_id dari backend. */
+  const partOfQuestion = useCallback(
+    (q: Question | undefined) => {
+      if (!q || examParts.length === 0 || !q.partId) return undefined;
+      return examParts.find((p) => p.id === q.partId);
+    },
+    [examParts]
+  );
+
+  const currentPart = partOfQuestion(currentQuestion);
+  /** Nomor soal di dalam bagiannya (mis. "Bagian A — soal 3 dari 10") */
+  const indexInPart = currentPart
+    ? examQuestions
+        .filter((q) => q.partId === currentPart.id)
+        .findIndex((q) => q.id === currentQuestion?.id) + 1
+    : 0;
+
+  /** Kelompok soal per bagian (untuk navigator). */
+  const questionGroups = useMemo(() => {
+    if (examParts.length === 0) {
+      return [{ part: undefined as SessionPart | undefined, items: examQuestions.map((q, i) => ({ q, i })) }];
+    }
+    const groups: { part?: SessionPart; items: { q: Question; i: number }[] }[] = examParts.map((p) => ({
+      part: p,
+      items: [],
+    }));
+    const orphans: { q: Question; i: number }[] = [];
+    examQuestions.forEach((q, i) => {
+      const g = groups.find((x) => x.part?.id === q.partId);
+      if (g) g.items.push({ q, i });
+      else orphans.push({ q, i });
+    });
+    const nonEmpty = groups.filter((g) => g.items.length > 0);
+    if (orphans.length > 0) nonEmpty.push({ part: undefined, items: orphans });
+    return nonEmpty;
+  }, [examParts, examQuestions]);
 
   const handleSubmit = useCallback(() => {
     setShowSubmitDialog(true);
@@ -310,7 +377,6 @@ export default function ExamPage() {
     }, 10000);
     return () => clearInterval(id);
   }, [phase, sessionId, answers, examId]);
-
   useEffect(() => {
     if (phase !== 'active' || !security.enabled || !security.blockCopyPaste) return;
     const block = (e: Event) => e.preventDefault();
@@ -372,7 +438,12 @@ export default function ExamPage() {
     if (!sessionId) return;
     setSubmitting(true);
     try {
-      const { result_id } = await sessionsApi.submitExam(sessionId);
+      const { result_id, time_exceeded } = await sessionsApi.submitExam(sessionId);
+      if (time_exceeded) {
+        toast.warning(
+          'Waktu ujian sudah berakhir — jawaban tetap dikumpulkan dan tercatat di log pengawas.'
+        );
+      }
       await document.exitFullscreen().catch(() => {});
       router.push(`/student/results/${result_id}`);
     } catch (e) {
@@ -622,26 +693,37 @@ export default function ExamPage() {
                 <span className="text-xs text-muted-foreground">{answeredCount}/{examQuestions.length}</span>
               </div>
               <div className="grid grid-cols-5 gap-1.5 max-h-[60vh] overflow-y-auto p-0.5">
-                {examQuestions.map((q, index) => {
-                  const status = getQuestionStatus(q.id);
-                  const isCurrent = index === currentQuestionIndex;
-                  return (
-                    <button
-                      key={q.id}
-                      type="button"
-                      onClick={() => goToQuestion(index)}
-                      className={cn(
-                        'h-9 w-full rounded-md text-xs font-medium transition-all touch-manipulation flex items-center justify-center',
-                        isCurrent && 'ring-2 ring-primary ring-offset-2 font-bold shadow-sm',
-                        status === 'answered' && 'bg-emerald-600 text-white hover:bg-emerald-700',
-                        status === 'flagged' && 'bg-amber-500 text-white hover:bg-amber-600',
-                        status === 'unanswered' && 'bg-muted hover:bg-muted/80 text-foreground'
-                      )}
-                    >
-                      {index + 1}
-                    </button>
-                  );
-                })}
+                {questionGroups.map((group, gi) => (
+                  <div key={group.part?.id ?? `group-${gi}`} className="col-span-5 space-y-1.5">
+                    {examParts.length > 0 && (
+                      <p className="pt-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                        {group.part?.title ?? 'Tanpa bagian'}
+                      </p>
+                    )}
+                    <div className="grid grid-cols-5 gap-1.5">
+                      {group.items.map(({ q, i: index }) => {
+                        const status = getQuestionStatus(q.id);
+                        const isCurrent = index === currentQuestionIndex;
+                        return (
+                          <button
+                            key={q.id}
+                            type="button"
+                            onClick={() => goToQuestion(index)}
+                            className={cn(
+                              'h-9 w-full rounded-md text-xs font-medium transition-all touch-manipulation flex items-center justify-center',
+                              isCurrent && 'ring-2 ring-primary ring-offset-2 font-bold shadow-sm',
+                              status === 'answered' && 'bg-emerald-600 text-white hover:bg-emerald-700',
+                              status === 'flagged' && 'bg-amber-500 text-white hover:bg-amber-600',
+                              status === 'unanswered' && 'bg-muted hover:bg-muted/80 text-foreground'
+                            )}
+                          >
+                            {index + 1}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
               </div>
               <div className="mt-4 pt-3 border-t border-border space-y-1.5 text-[11px] text-muted-foreground">
                 <div className="flex items-center gap-2">
@@ -670,6 +752,19 @@ export default function ExamPage() {
           >
             <Card className="border-border border-t-[3px] border-t-primary shadow-sm">
               <CardContent className="p-4 sm:p-6 md:p-8">
+                {currentPart && (
+                  <div className="mb-4 rounded-lg border border-primary/25 bg-primary/5 px-3 py-2 sm:mb-6">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="font-heading text-sm font-semibold">{currentPart.title}</p>
+                      <span className="text-[11px] text-muted-foreground">
+                        Soal {indexInPart} dari {currentPart.questionCount} di bagian ini
+                      </span>
+                    </div>
+                    {currentPart.description ? (
+                      <p className="mt-1 text-xs text-muted-foreground">{currentPart.description}</p>
+                    ) : null}
+                  </div>
+                )}
                 <div className="flex items-center justify-between gap-2 mb-4 sm:mb-6">
                   <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
                     <Badge variant="outline" className="text-sm sm:text-base px-2 sm:px-2.5 py-0.5 font-heading">
@@ -872,35 +967,44 @@ export default function ExamPage() {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="flex-1 overflow-y-auto py-3">
-            <div className="grid grid-cols-5 gap-2">
-              {examQuestions.map((q, index) => {
-                const status = getQuestionStatus(q.id);
-                const isCurrent = index === currentQuestionIndex;
-                return (
-                  <button
-                    key={q.id}
-                    type="button"
-                    onClick={() => {
-                      goToQuestion(index);
-                      setMobileNavigatorOpen(false);
-                    }}
-                    className={cn(
-                      'h-11 rounded-lg text-xs font-medium transition-all touch-manipulation flex flex-col items-center justify-center relative active:scale-95',
-                      isCurrent && 'ring-2 ring-primary ring-offset-2 font-bold shadow-sm',
-                      status === 'answered' && 'bg-emerald-600 text-white',
-                      status === 'flagged' && 'bg-amber-500 text-white',
-                      status === 'unanswered' && 'bg-muted text-foreground'
-                    )}
-                  >
-                    <span>{index + 1}</span>
-                    {flaggedQuestions.has(q.id) && (
-                      <span className="w-1.5 h-1.5 rounded-full bg-white absolute top-1 right-1" />
-                    )}
-                  </button>
-                );
-              })}
-            </div>
+          <div className="flex-1 overflow-y-auto py-3 space-y-3">
+            {questionGroups.map((group, gi) => (
+              <div key={group.part?.id ?? `m-group-${gi}`} className="space-y-2">
+                {examParts.length > 0 && (
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    {group.part?.title ?? 'Tanpa bagian'}
+                  </p>
+                )}
+                <div className="grid grid-cols-5 gap-2">
+                  {group.items.map(({ q, i: index }) => {
+                    const status = getQuestionStatus(q.id);
+                    const isCurrent = index === currentQuestionIndex;
+                    return (
+                      <button
+                        key={q.id}
+                        type="button"
+                        onClick={() => {
+                          goToQuestion(index);
+                          setMobileNavigatorOpen(false);
+                        }}
+                        className={cn(
+                          'h-11 rounded-lg text-xs font-medium transition-all touch-manipulation flex flex-col items-center justify-center relative active:scale-95',
+                          isCurrent && 'ring-2 ring-primary ring-offset-2 font-bold shadow-sm',
+                          status === 'answered' && 'bg-emerald-600 text-white',
+                          status === 'flagged' && 'bg-amber-500 text-white',
+                          status === 'unanswered' && 'bg-muted text-foreground'
+                        )}
+                      >
+                        <span>{index + 1}</span>
+                        {flaggedQuestions.has(q.id) && (
+                          <span className="w-1.5 h-1.5 rounded-full bg-white absolute top-1 right-1" />
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
 
             <div className="mt-4 pt-3 border-t border-border grid grid-cols-3 gap-2 text-[11px] text-muted-foreground">
               <div className="flex items-center gap-1.5">

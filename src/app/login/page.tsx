@@ -23,7 +23,8 @@ export default function LoginPage() {
   const [registerName, setRegisterName] = useState('');
   const [registerEmail, setRegisterEmail] = useState('');
   const [registerPassword, setRegisterPassword] = useState('');
-  const [registerRole, setRegisterRole] = useState<'teacher' | 'student' | 'admin'>('student');
+  // Akun admin tidak bisa didaftarkan sendiri (dibuat oleh admin yang ada).
+  const [registerRole, setRegisterRole] = useState<'teacher' | 'student'>('student');
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -175,13 +176,12 @@ export default function LoginPage() {
                     <select
                       id="register-role"
                       value={registerRole}
-                      onChange={(e) => setRegisterRole(e.target.value as 'teacher' | 'student' | 'admin')}
+                      onChange={(e) => setRegisterRole(e.target.value as 'teacher' | 'student')}
                       className="flex h-11 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm transition-all duration-200 focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/20 focus-visible:ring-offset-1 focus-visible:ring-offset-background hover:border-primary/20 dark:bg-input/30"
                       disabled={isLoading}
                     >
                       <option value="student">Student</option>
                       <option value="teacher">Teacher</option>
-                      <option value="admin">Admin</option>
                     </select>
                   </div>
                   <Button type="submit" className="w-full h-11 mt-2 shadow-md hover:shadow-lg transition-all duration-200" disabled={isLoading}>
@@ -200,19 +200,34 @@ export default function LoginPage() {
           </CardContent>
         </Card>
 
-        <div className="mt-6 p-4 rounded-xl bg-muted/30 border border-border/50">
-          <p className="text-center text-sm font-medium text-foreground mb-2">Demo Accounts</p>
-          <div className="space-y-1 text-xs text-muted-foreground">
-            <div className="flex items-center justify-between gap-2">
-              <span>Teacher:</span>
-              <code className="px-2 py-0.5 bg-background rounded-md">sarah.johnson@school.edu</code>
+        {/*
+          Akun demo hanya ditampilkan di mode development — di produksi jangan
+          pernah mencetak kredensial ke halaman publik.
+        */}
+        {process.env.NODE_ENV === 'development' && (
+          <div className="mt-6 p-4 rounded-xl bg-muted/30 border border-border/50">
+            <p className="text-center text-sm font-medium text-foreground mb-2">
+              Akun demo (seed) — password: password123
+            </p>
+            <div className="space-y-1 text-xs text-muted-foreground">
+              <div className="flex items-center justify-between gap-2">
+                <span>Guru:</span>
+                <code className="px-2 py-0.5 bg-background rounded-md">teacher@seed.quizzz.dev</code>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span>Murid:</span>
+                <code className="px-2 py-0.5 bg-background rounded-md">student@seed.quizzz.dev</code>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span>Admin:</span>
+                <code className="px-2 py-0.5 bg-background rounded-md">admin@seed.quizzz.dev</code>
+              </div>
             </div>
-            <div className="flex items-center justify-between gap-2">
-              <span>Student:</span>
-              <code className="px-2 py-0.5 bg-background rounded-md">ahmad.wijaya@school.edu</code>
-            </div>
+            <p className="mt-2 text-center text-[11px] text-muted-foreground">
+              Buat akun sendiri lewat tab Register (guru/murid).
+            </p>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );

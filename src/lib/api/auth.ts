@@ -20,6 +20,16 @@ export interface AuthResponse {
   user: User;
 }
 
+export interface UpdateProfileRequest {
+  name?: string;
+  avatar?: string;
+}
+
+export interface ChangePasswordRequest {
+  current_password: string;
+  new_password: string;
+}
+
 export const authApi = {
   register: async (data: RegisterRequest): Promise<AuthResponse> => {
     const response = await post<{ token: string; user: Record<string, unknown> }>('/auth/register', data);
@@ -51,7 +61,16 @@ export const authApi = {
     const raw = await get<Record<string, unknown>>('/auth/me');
     return mapUser(raw);
   },
+
+  updateProfile: async (data: UpdateProfileRequest): Promise<User> => {
+    const raw = await put<Record<string, unknown>>('/auth/me', data);
+    return mapUser(raw);
+  },
+
+  changePassword: async (data: ChangePasswordRequest): Promise<{ message: string }> => {
+    return put<{ message: string }>('/auth/password', data);
+  },
 };
 
 // Re-import get for consistency
-import { get } from './client';
+import { get, put } from './client';
