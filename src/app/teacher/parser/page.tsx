@@ -130,6 +130,11 @@ function parsedToCreate(q: ParsedQuestion): CreateQuestionRequest {
   const ans = q.correctAnswer;
   let correct_answer = Array.isArray(ans) ? ans.join('; ') : String(ans ?? '');
   correct_answer = correct_answer.trim();
+  if (q.type === 'step-by-step') {
+    // Kunci per langkah disimpan sebagai JSON array (lihat validateStepByStep di backend)
+    const keys = Array.isArray(ans) ? ans : [String(ans ?? '')];
+    correct_answer = JSON.stringify(keys.map((k) => k.trim()));
+  }
   // Map letter key (b / B) to full option text for MCQ grading & DB consistency
   if (
     q.type === 'multiple-choice' &&
@@ -253,6 +258,7 @@ export default function AIQuestionParserPage() {
     { value: 'essay', label: 'Essay' },
     { value: 'matching', label: 'Matching' },
     { value: 'fill-blank', label: 'Fill in the Blank' },
+    { value: 'step-by-step', label: 'Step-by-Step (Bertahap)' },
   ];
   const difficulties: DifficultyLevel[] = ['easy', 'medium', 'hard'];
 
@@ -946,6 +952,7 @@ Correct answer: $f'(x) = 6x - 4$`;
       essay: { label: 'Essay', className: 'bg-orange-500/10 text-orange-500' },
       matching: { label: 'Match', className: 'bg-pink-500/10 text-pink-500' },
       'fill-blank': { label: 'Fill', className: 'bg-cyan-500/10 text-cyan-500' },
+      'step-by-step': { label: 'Steps', className: 'bg-indigo-500/10 text-indigo-500' },
     };
     const variant = variants[type] || variants['multiple-choice'];
     return <Badge className={variant.className}>{variant.label}</Badge>;
@@ -1699,11 +1706,20 @@ Correct answer: $f'(x) = 6x - 4$`;
                                             onValueChange={(v) => {
                                               const t = v as QuestionType;
                                               const patch: Partial<ParsedQuestion> = { type: t };
-                                              if (t === 'multiple-choice' && (!q.options || q.options.length < 2)) {
-                                                patch.options = ['Opsi A', 'Opsi B'];
-                                              }
-                                              if (t !== 'multiple-choice') {
-                                                patch.options = undefined;
+                                              if (t === 'step-by-step') {
+                                                patch.options = ['Langkah 1'];
+                                                patch.correctAnswer = [''];
+                                              } else {
+                                                if (q.type === 'step-by-step') patch.correctAnswer = '';
+                                                if (
+                                                  t === 'multiple-choice' &&
+                                                  (!q.options || q.options.length < 2 || q.type === 'step-by-step')
+                                                ) {
+                                                  patch.options = ['Opsi A', 'Opsi B'];
+                                                }
+                                                if (t !== 'multiple-choice') {
+                                                  patch.options = undefined;
+                                                }
                                               }
                                               updateQuestion(q.id, patch);
                                             }}
@@ -1782,7 +1798,72 @@ Correct answer: $f'(x) = 6x - 4$`;
                                           ))}
                                         </div>
                                       )}
+                                      {q.type === 'step-by-step' && (
+                                        <div className="space-y-2">
+                                          <Label>Langkah pengerjaan (urut)</Label>
+                                          {(q.options ?? []).map((instr, si) => {
+                                            const keys = Array.isArray(q.correctAnswer) ? q.correctAnswer : [];
+                                            const steps = q.options ?? [];
+                                            return (
+                                              <div key={si} className="grid items-start gap-2 sm:grid-cols-[auto_1fr_1fr_auto]">
+                                                <span className="pt-2 text-sm font-medium">{si + 1}.</span>
+                                                <Input
+                                                  placeholder="Instruksi langkah"
+                                                  value={instr}
+                                                  onChange={(e) => {
+                                                    const opts = [...steps];
+                                                    opts[si] = e.target.value;
+                                                    updateQuestion(q.id, { options: opts });
+                                                  }}
+                                                />
+                                                <Input
+                                                  placeholder="Kunci jawaban langkah ini"
+                                                  value={keys[si] ?? ''}
+                                                  onChange={(e) => {
+                                                    const next = steps.map((_, i) => keys[i] ?? '');
+                                                    next[si] = e.target.value;
+                                                    updateQuestion(q.id, { correctAnswer: next });
+                                                  }}
+                                                />
+                                                <Button
+                                                  type="button"
+                                                  variant="ghost"
+                                                  size="icon"
+                                                  disabled={steps.length <= 1}
+                                                  onClick={() =>
+                                                    updateQuestion(q.id, {
+                                                      options: steps.filter((_, i) => i !== si),
+                                                      correctAnswer: steps
+                                                        .map((_, i) => keys[i] ?? '')
+                                                        .filter((_, i) => i !== si),
+                                                    })
+                                                  }
+                                                >
+                                                  <Trash2 className="h-4 w-4" />
+                                                </Button>
+                                              </div>
+                                            );
+                                          })}
+                                          <Button
+                                            type="button"
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={() =>
+                                              updateQuestion(q.id, {
+                                                options: [...(q.options ?? []), `Langkah ${(q.options ?? []).length + 1}`],
+                                                correctAnswer: [
+                                                  ...(Array.isArray(q.correctAnswer) ? q.correctAnswer : []),
+                                                  '',
+                                                ],
+                                              })
+                                            }
+                                          >
+                                            <Plus className="h-4 w-4" /> Tambah langkah
+                                          </Button>
+                                        </div>
+                                      )}
                                       <div className="grid gap-3 sm:grid-cols-2">
+                                        {q.type !== 'step-by-step' && (
                                         <div>
                                           <Label>Jawaban benar</Label>
                                           <Input
@@ -1794,6 +1875,7 @@ Correct answer: $f'(x) = 6x - 4$`;
                                             }
                                           />
                                         </div>
+                                        )}
                                         <div>
                                           <Label>Difficulty</Label>
                                           <Select
@@ -1890,7 +1972,20 @@ Correct answer: $f'(x) = 6x - 4$`;
                                         contentClassName="text-sm text-muted-foreground whitespace-pre-wrap"
                                       />
 
-                                      {q.options && q.options.length > 0 && (
+                                      {q.type === 'step-by-step' && (q.options ?? []).length > 0 && (
+                                        <ol className="list-decimal space-y-1 pl-5 text-sm">
+                                          {(q.options ?? []).map((instr, si) => (
+                                            <li key={si}>
+                                              <MathText>{stripMediaMarkersFromText(instr)}</MathText>
+                                              <span className="ml-2 font-medium text-green-600 dark:text-green-400">
+                                                → {Array.isArray(q.correctAnswer) ? q.correctAnswer[si] : ''}
+                                              </span>
+                                            </li>
+                                          ))}
+                                        </ol>
+                                      )}
+
+                                      {q.type !== 'step-by-step' && q.options && q.options.length > 0 && (
                                         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                                           {q.options.map((option, i) => {
                                             const isCorrect =
