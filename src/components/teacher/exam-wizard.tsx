@@ -453,6 +453,7 @@ export function ExamWizard({ examId }: ExamWizardProps) {
       essay: { label: 'Essay', className: 'bg-orange-500/10 text-orange-500' },
       matching: { label: 'Match', className: 'bg-pink-500/10 text-pink-500' },
       'fill-blank': { label: 'Fill', className: 'bg-cyan-500/10 text-cyan-500' },
+      'step-by-step': { label: 'Steps', className: 'bg-indigo-500/10 text-indigo-500' },
     };
     const variant = variants[type] || variants['multiple-choice'];
     return <Badge className={variant.className}>{variant.label}</Badge>;
