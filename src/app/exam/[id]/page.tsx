@@ -534,6 +534,7 @@ export default function ExamPage() {
     .map((q, i) => (flaggedQuestions.has(q.id) ? i : -1))
     .filter((i) => i >= 0);
   const isLastQuestion = currentQuestionIndex === examQuestions.length - 1;
+  const fullscreenRequired = security.enabled && security.requireFullscreen;
 
   // Pintasan keyboard: ← / → pindah soal, A–E pilih opsi, F tandai ragu-ragu.
   useEffect(() => {
@@ -858,16 +859,32 @@ export default function ExamPage() {
               </span>
               <span>{formatCountdown(timeRemaining)}</span>
             </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={toggleFullscreen}
-              className="hidden sm:inline-flex gap-1.5 h-8"
-              title={isFullscreen ? 'Keluar mode fokus' : 'Mode fokus (layar penuh)'}
-            >
-              {isFullscreen ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-              <span className="hidden md:inline">Fokus</span>
-            </Button>
+            {fullscreenRequired ? (
+              // Keluar fullscreen dihitung pelanggaran — jangan sediakan tombol keluar,
+              // hanya tombol untuk kembali ke layar penuh bila sempat keluar.
+              !isFullscreen && (
+                <Button
+                  size="sm"
+                  onClick={toggleFullscreen}
+                  className="gap-1.5 h-8 bg-amber-500 text-white hover:bg-amber-600 animate-pulse"
+                  title="Kembali ke mode layar penuh"
+                >
+                  <Eye className="w-3.5 h-3.5" />
+                  <span className="hidden md:inline">Layar penuh</span>
+                </Button>
+              )
+            ) : (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={toggleFullscreen}
+                className="hidden sm:inline-flex gap-1.5 h-8"
+                title={isFullscreen ? 'Keluar mode fokus' : 'Mode fokus (layar penuh)'}
+              >
+                {isFullscreen ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                <span className="hidden md:inline">{isFullscreen ? 'Keluar fokus' : 'Mode fokus'}</span>
+              </Button>
+            )}
             <Button
               variant="outline"
               size="sm"
@@ -986,7 +1003,7 @@ export default function ExamPage() {
                             aria-checked={isSelected}
                             onClick={() => handleAnswer(option)}
                             className={cn(
-                              'group relative w-full text-left p-3.5 sm:p-4 rounded-2xl border-2 text-[14px] sm:text-[15px] md:text-[16px] transition-all duration-200 flex items-start gap-3 sm:gap-4 touch-manipulation cursor-pointer',
+                              'group relative w-full text-left p-3.5 sm:p-4 rounded-2xl border-2 focus-visible:ring-offset-card text-[14px] sm:text-[15px] md:text-[16px] transition-all duration-200 flex items-start gap-3 sm:gap-4 touch-manipulation cursor-pointer',
                               isSelected
                                 ? 'border-primary bg-primary/[0.07] shadow-md shadow-primary/10 font-medium text-foreground'
                                 : 'border-border/70 bg-card hover:border-primary/40 hover:bg-primary/[0.03] hover:-translate-y-0.5 hover:shadow-sm active:translate-y-0 active:scale-[0.99]'
@@ -1039,7 +1056,7 @@ export default function ExamPage() {
                             aria-checked={isSelected}
                             onClick={() => handleAnswer(value)}
                             className={cn(
-                              'group flex flex-col items-center justify-center gap-2 rounded-2xl border-2 p-5 sm:p-7 font-semibold transition-all duration-200 touch-manipulation active:scale-[0.98]',
+                              'group flex flex-col items-center justify-center gap-2 rounded-2xl border-2 focus-visible:ring-offset-card p-5 sm:p-7 font-semibold transition-all duration-200 touch-manipulation active:scale-[0.98]',
                               isSelected
                                 ? isTrue
                                   ? 'border-emerald-500 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 shadow-md shadow-emerald-500/15'
@@ -1069,13 +1086,13 @@ export default function ExamPage() {
                   {(currentQuestion.type === 'short-answer' ||
                     currentQuestion.type === 'essay' ||
                     currentQuestion.type === 'fill-blank') && (
-                    <div className="rounded-2xl border-2 border-border/70 bg-card transition-colors focus-within:border-primary focus-within:shadow-md focus-within:shadow-primary/10">
+                    <div className="rounded-2xl border-2 border-border/70 bg-card transition-colors focus-within:border-primary focus-within:ring-4 focus-within:ring-primary/10">
                       <textarea
                         value={currentAnswer}
                         onChange={(e) => handleAnswer(e.target.value)}
                         placeholder="Tuliskan jawaban Anda di sini…"
                         className={cn(
-                          'w-full resize-y rounded-2xl bg-transparent p-4 text-[15px] sm:text-[16px] leading-relaxed outline-none focus:ring-0! focus-visible:ring-0!',
+                          'w-full resize-y rounded-2xl bg-transparent p-4 text-[15px] sm:text-[16px] leading-relaxed outline-none focus:[box-shadow:none]! focus-visible:[box-shadow:none]!',
                           currentQuestion.type === 'essay' ? 'min-h-[220px]' : 'min-h-[120px]'
                         )}
                       />
