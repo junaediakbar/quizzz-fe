@@ -28,7 +28,7 @@ import { Exam } from '@/lib/types';
 import { formatGradeLabel } from '@/lib/constants/grades';
 import { withSecurityEnabled } from '@/lib/exam-security';
 import { useAuth } from '@/contexts/AuthContext';
-import { Edit, FileText, Loader2, MoreVertical, Plus, Search, Shield, ShieldOff, Trash2 } from 'lucide-react';
+import { Edit, Eye, FileText, Loader2, MoreVertical, Plus, Search, Shield, ShieldOff, Trash2 } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
@@ -283,6 +283,12 @@ export default function TeacherExamsPage() {
                             >
                               <Edit className="w-4 h-4 mr-2" />
                               Edit ujian
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => router.push(`/teacher/exams/${exam.id}/live`)}
+                            >
+                              <Eye className="w-4 h-4 mr-2" />
+                              Live monitoring
                             </DropdownMenuItem>
                             <DropdownMenuItem
                               className="text-destructive focus:text-destructive"

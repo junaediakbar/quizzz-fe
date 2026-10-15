@@ -2,6 +2,28 @@ import { get, post, put, del } from './client';
 import { Exam, ExamConfig } from '../types';
 import { mapExam } from './mappers';
 
+export interface LiveStudentSession {
+  sessionId: string;
+  studentId: string;
+  studentName: string;
+  attemptNumber: number;
+  status: string;
+  startedAt: string | null;
+  submittedAt: string | null;
+  updatedAt: string;
+  answeredCount: number;
+  /** questionId -> jawaban sementara murid */
+  answers: Record<string, string>;
+}
+
+export interface LiveExamResponse {
+  examId: string;
+  examTitle: string;
+  totalQuestions: number;
+  serverTime: string;
+  sessions: LiveStudentSession[];
+}
+
 /** Bagian ujian yang dikirim ke backend (snake_case) */
 export interface ExamPartRequest {
   title: string;
@@ -144,5 +166,34 @@ export const examsApi = {
 
   getAnalytics: async (id: string): Promise<unknown> => {
     return get(`/exams/${id}/analytics`);
+  },
+
+  /** Sesi aktif murid + jawaban sementara (live monitoring, guru pemilik ujian). */
+  getLive: async (id: string): Promise<LiveExamResponse> => {
+    const raw = await get<{
+      exam_id: string;
+      exam_title?: string;
+      total_questions?: number;
+      server_time?: string;
+      sessions?: Record<string, unknown>[];
+    }>(`/exams/${id}/live`);
+    return {
+      examId: raw.exam_id,
+      examTitle: raw.exam_title ?? '',
+      totalQuestions: Number(raw.total_questions ?? 0),
+      serverTime: raw.server_time ?? new Date().toISOString(),
+      sessions: (raw.sessions || []).map((s) => ({
+        sessionId: String(s.session_id ?? ''),
+        studentId: String(s.student_id ?? ''),
+        studentName: String(s.student_name ?? ''),
+        attemptNumber: Number(s.attempt_number ?? 1),
+        status: String(s.status ?? ''),
+        startedAt: s.started_at ? String(s.started_at) : null,
+        submittedAt: s.submitted_at ? String(s.submitted_at) : null,
+        updatedAt: String(s.updated_at ?? ''),
+        answeredCount: Number(s.answered_count ?? 0),
+        answers: (s.answers && typeof s.answers === 'object' ? s.answers : {}) as Record<string, string>,
+      })),
+    };
   },
 };
