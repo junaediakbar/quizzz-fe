@@ -92,7 +92,10 @@ export default function AdminSettingsPage() {
   const [settings, setSettings] = useState<AdminSettings>(DEFAULT_SETTINGS);
   const [isSaving, setIsSaving] = useState(false);
   /** Status API diambil dari endpoint /health (bukan teks statis). */
-  const [apiStatus, setApiStatus] = useState<'checking' | 'online' | 'offline'>('checking');
+  // Tanpa NEXT_PUBLIC_API_URL tidak ada backend yang bisa dicek → langsung offline.
+  const [apiStatus, setApiStatus] = useState<'checking' | 'online' | 'offline'>(() =>
+    process.env.NEXT_PUBLIC_API_URL ? 'checking' : 'offline'
+  );
 
   // Re-read device preferences on mount so they survive a reload. Deferred one
   // microtask so the server HTML and the hydration pass agree on the defaults.
@@ -110,7 +113,9 @@ export default function AdminSettingsPage() {
   // Cek kesehatan API sungguhan; database tidak diekspos oleh endpoint publik.
   useEffect(() => {
     let active = true;
-    const base = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080/api/v1').replace(/\/api\/v1\/?$/, '');
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL;
+    if (!apiUrl) return;
+    const base = apiUrl.replace(/\/api\/v1\/?$/, '');
     fetch(`${base}/health`)
       .then((r) => (active ? setApiStatus(r.ok ? 'online' : 'offline') : undefined))
       .catch(() => {
@@ -167,6 +172,10 @@ export default function AdminSettingsPage() {
 
       {/* Main Content */}
       <main className="max-w-4xl mx-auto px-6 py-8 space-y-6">
+        {/* Pengaturan di bawah ini belum dikaitkan ke backend */}
+        <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-700 dark:text-amber-400">
+          Pengaturan di halaman ini belum terhubung ke backend dan tidak mengubah perilaku sistem. Nilainya hanya disimpan di browser ini.
+        </div>
         {/* General Settings */}
         <Card>
           <CardHeader>
