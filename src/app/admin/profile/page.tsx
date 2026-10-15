@@ -136,7 +136,7 @@ export default function AdminProfilePage() {
                         className="flex-1"
                       />
                     ) : (
-                      <p className="text-sm font-medium py-2">{user?.email || 'admin@quizzz.com'}</p>
+                      <p className="text-sm font-medium py-2">{user?.email || '—'}</p>
                     )}
                   </div>
                 </div>
