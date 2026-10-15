@@ -369,6 +369,18 @@ export function mapParseResult(raw: Record<string, unknown>): ParseResult {
   };
 }
 
+/** Kunci step-by-step datang dari backend sebagai string JSON array; editor butuh array. */
+function parseParsedCorrectAnswer(raw: Record<string, unknown>): string | string[] {
+  const answer = String(raw.correct_answer ?? '');
+  if (raw.type !== 'step-by-step') return answer;
+  try {
+    const keys: unknown = JSON.parse(answer);
+    return Array.isArray(keys) ? keys.map((k) => String(k)) : answer;
+  } catch {
+    return answer;
+  }
+}
+
 function mapParsedQuestion(raw: Record<string, unknown>): ParsedQuestion {
   let imagesRaw: unknown = raw.images ?? raw.image_urls ?? raw.imageUrls;
   if (typeof imagesRaw === 'string' && imagesRaw) {
@@ -387,7 +399,7 @@ function mapParsedQuestion(raw: Record<string, unknown>): ParsedQuestion {
     options: Array.isArray(raw.options) ? (raw.options as string[]) : undefined,
     images: images.length > 0 ? images : undefined,
     imageUrls,
-    correctAnswer: String(raw.correct_answer ?? ''),
+    correctAnswer: parseParsedCorrectAnswer(raw),
     explanation: raw.explanation ? String(raw.explanation) : undefined,
     difficulty: (raw.difficulty as DifficultyLevel) || 'medium',
     points: Number(raw.points ?? 5),

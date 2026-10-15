@@ -481,6 +481,16 @@ Correct answer: $f'(x) = 6x - 4$`;
     }
   }, []);
 
+  /** Contoh soal bertahap: tiap langkah ditulis "Langkah N: instruksi | Kunci: jawaban". */
+  const sampleTextStepByStep = `1. Tentukan nilai x dari persamaan 3x + 5 = 20. Kerjakan secara bertahap.
+Langkah 1: Kurangkan kedua ruas dengan 5 | Kunci: 3x = 15
+Langkah 2: Bagi kedua ruas dengan 3 | Kunci: x = 5
+
+2. Selesaikan sistem persamaan x + y = 10 dan x − y = 4 dengan eliminasi.
+Langkah 1: Jumlahkan kedua persamaan untuk mengeliminasi y | Kunci: 2x = 14
+Langkah 2: Hitung nilai x | Kunci: x = 7
+Langkah 3: Substitusikan x ke persamaan pertama | Kunci: y = 3`;
+
   const sampleJsonImport = `[
   {
     "type": "multiple-choice",
@@ -1193,6 +1203,19 @@ Correct answer: $f'(x) = 6x - 4$`;
                           }}
                         >
                           Contoh notasi matematika
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          type="button"
+                          onClick={() => {
+                            setInputText(sampleTextStepByStep);
+                            toast.message('Contoh soal step-by-step dimuat', {
+                              description: 'Format: "Langkah N: instruksi | Kunci: jawaban". Lalu Parse.',
+                            });
+                          }}
+                        >
+                          Contoh soal step-by-step
                         </Button>
                       </div>
                     </TabsContent>
