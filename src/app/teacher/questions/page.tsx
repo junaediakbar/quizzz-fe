@@ -60,7 +60,7 @@ import {
   ChevronRight,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { Question, QuestionBank, QuestionType } from '@/lib/types';
+import { Question, QuestionBank, QuestionStep, QuestionType } from '@/lib/types';
 import { TeacherNav } from '@/components/shared/teacher-nav';
 import { useAuth } from '@/contexts/AuthContext';
 import { questionsApi, CreateQuestionRequest } from '@/lib/api/questions';
@@ -123,6 +123,7 @@ function QuestionBankPage({ initialSearch = '' }: { initialSearch?: string }) {
     points: number;
     optionsText: string;
     imageUrlsText: string;
+    steps: QuestionStep[];
   }>({
     type: 'multiple-choice',
     title: '',
@@ -132,6 +133,7 @@ function QuestionBankPage({ initialSearch = '' }: { initialSearch?: string }) {
     points: 5,
     optionsText: '',
     imageUrlsText: '',
+    steps: [],
   });
 
   const [uploadedImageUrls, setUploadedImageUrls] = useState<string[]>([]);
@@ -341,6 +343,7 @@ function QuestionBankPage({ initialSearch = '' }: { initialSearch?: string }) {
     { value: 'essay', label: 'Essay' },
     { value: 'matching', label: 'Matching' },
     { value: 'fill-blank', label: 'Fill in the Blank' },
+    { value: 'step-by-step', label: 'Step-by-Step (Bertahap)' },
   ];
 
   const difficulties = ['easy', 'medium', 'hard'];
@@ -353,6 +356,7 @@ function QuestionBankPage({ initialSearch = '' }: { initialSearch?: string }) {
       essay: { label: 'Essay', className: 'bg-orange-500/10 text-orange-500' },
       matching: { label: 'Match', className: 'bg-pink-500/10 text-pink-500' },
       'fill-blank': { label: 'Fill', className: 'bg-cyan-500/10 text-cyan-500' },
+      'step-by-step': { label: 'Steps', className: 'bg-indigo-500/10 text-indigo-500' },
     };
     const variant = variants[type];
     return <Badge className={variant.className}>{variant.label}</Badge>;
@@ -435,9 +439,14 @@ function QuestionBankPage({ initialSearch = '' }: { initialSearch?: string }) {
         type: q.type,
         title: `${q.title} (copy)`,
         content: q.content,
-        correct_answer: Array.isArray(q.correctAnswer)
-          ? q.correctAnswer.join('; ')
-          : String(q.correctAnswer ?? ''),
+        correct_answer:
+          q.type === 'step-by-step'
+            ? Array.isArray(q.correctAnswer)
+              ? JSON.stringify(q.correctAnswer)
+              : String(q.correctAnswer ?? '[]')
+            : Array.isArray(q.correctAnswer)
+              ? q.correctAnswer.join('; ')
+              : String(q.correctAnswer ?? ''),
         difficulty: q.difficulty,
         points: q.points,
         tags: q.tags,
@@ -456,11 +465,17 @@ function QuestionBankPage({ initialSearch = '' }: { initialSearch?: string }) {
   // Creates the new question (validating inputs). Returns the created question,
   // or null when validation fails / the request errors.
   const saveNewQuestion = async (): Promise<Question | null> => {
-    if (!newQ.title.trim() || !newQ.content.trim() || !newQ.correct_answer.trim()) {
+    if (newQ.type === 'step-by-step') {
+      if (!newQ.title.trim() || !newQ.content.trim()) {
+        toast.error('Judul dan isi soal wajib diisi');
+        return null;
+      }
+    } else if (!newQ.title.trim() || !newQ.content.trim() || !newQ.correct_answer.trim()) {
       toast.error('Judul, isi, dan jawaban benar wajib diisi');
       return null;
     }
     let options: string[] | undefined;
+    let correctAnswer = newQ.correct_answer.trim();
     if (newQ.type === 'multiple-choice') {
       options = newQ.optionsText
         .split('\n')
@@ -470,6 +485,19 @@ function QuestionBankPage({ initialSearch = '' }: { initialSearch?: string }) {
         toast.error('MCQ: isi minimal 2 opsi (satu baris per opsi)');
         return null;
       }
+    }
+    if (newQ.type === 'step-by-step') {
+      options = newQ.steps.map((s) => s.instruction.trim());
+      if (options.length < 1 || options.some((s) => !s)) {
+        toast.error('Isi instruksi setiap langkah (min. 1 langkah)');
+        return null;
+      }
+      const keys = newQ.steps.map((s) => s.answer.trim());
+      if (keys.some((k) => !k)) {
+        toast.error('Isi kunci jawaban untuk setiap langkah');
+        return null;
+      }
+      correctAnswer = JSON.stringify(keys);
     }
     const fromText = newQ.imageUrlsText
       .split('\n')
@@ -483,7 +511,7 @@ function QuestionBankPage({ initialSearch = '' }: { initialSearch?: string }) {
         type: newQ.type,
         title: newQ.title.trim(),
         content: newQ.content.trim(),
-        correct_answer: newQ.correct_answer.trim(),
+        correct_answer: correctAnswer,
         difficulty: newQ.difficulty,
         points: newQ.points,
         options,
@@ -501,6 +529,7 @@ function QuestionBankPage({ initialSearch = '' }: { initialSearch?: string }) {
         points: 5,
         optionsText: '',
         imageUrlsText: '',
+        steps: [],
       });
       await loadQuestions();
       await loadBanks();
@@ -1210,15 +1239,89 @@ function QuestionBankPage({ initialSearch = '' }: { initialSearch?: string }) {
                   ))}
               </div>
             )}
-            <div>
-              <Label>Jawaban benar</Label>
-              <Input
-                className="mt-1"
-                placeholder={newQ.type === 'true-false' ? 'true atau false' : 'Teks jawaban'}
-                value={newQ.correct_answer}
-                onChange={(e) => setNewQ((s) => ({ ...s, correct_answer: e.target.value }))}
-              />
-            </div>
+            {newQ.type === 'step-by-step' && (
+              <div>
+                <div className="flex items-center justify-between">
+                  <Label>Langkah pengerjaan</Label>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() =>
+                      setNewQ((s) => ({ ...s, steps: [...s.steps, { instruction: '', answer: '' }] }))
+                    }
+                  >
+                    + Tambah langkah
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground mt-0.5 mb-1.5">
+                  Murid menjawab tiap langkah; nilai dihitung parsial dan Anda melihat langkah mana yang salah.
+                </p>
+                <div className="space-y-2">
+                  {newQ.steps.map((step, si) => (
+                    <div key={si} className="rounded-lg border p-2.5 space-y-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-semibold text-muted-foreground w-14 shrink-0">
+                          Langkah {si + 1}
+                        </span>
+                        <Input
+                          placeholder="Instruksi (mis. Berapa 5 x 4?)"
+                          value={step.instruction}
+                          onChange={(e) =>
+                            setNewQ((s) => ({
+                              ...s,
+                              steps: s.steps.map((st, i) =>
+                                i === si ? { ...st, instruction: e.target.value } : st
+                              ),
+                            }))
+                          }
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="text-destructive shrink-0"
+                          onClick={() =>
+                            setNewQ((s) => ({ ...s, steps: s.steps.filter((_, i) => i !== si) }))
+                          }
+                        >
+                          ✕
+                        </Button>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-semibold text-muted-foreground w-14 shrink-0">Kunci</span>
+                        <Input
+                          placeholder="Kunci jawaban langkah ini"
+                          value={step.answer}
+                          onChange={(e) =>
+                            setNewQ((s) => ({
+                              ...s,
+                              steps: s.steps.map((st, i) =>
+                                i === si ? { ...st, answer: e.target.value } : st
+                              ),
+                            }))
+                          }
+                        />
+                      </div>
+                    </div>
+                  ))}
+                  {newQ.steps.length === 0 && (
+                    <p className="text-sm text-muted-foreground">Belum ada langkah. Klik “Tambah langkah”.</p>
+                  )}
+                </div>
+              </div>
+            )}
+            {newQ.type !== 'step-by-step' && (
+              <div>
+                <Label>Jawaban benar</Label>
+                <Input
+                  className="mt-1"
+                  placeholder={newQ.type === 'true-false' ? 'true atau false' : 'Teks jawaban'}
+                  value={newQ.correct_answer}
+                  onChange={(e) => setNewQ((s) => ({ ...s, correct_answer: e.target.value }))}
+                />
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label>Difficulty</Label>
@@ -1493,6 +1596,36 @@ function QuestionBankPage({ initialSearch = '' }: { initialSearch?: string }) {
                   <div className="space-y-2">
                     <p className="text-sm font-medium text-muted-foreground">Tipe: Fill in the Blank</p>
                     <p className="text-sm text-muted-foreground">Siswa akan mengisi bagian yang kosong.</p>
+                  </div>
+                )}
+
+                {/* Step-by-Step Type */}
+                {viewQ?.type === 'step-by-step' && (
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium text-muted-foreground">Langkah pengerjaan & kunci:</p>
+                    <ol className="space-y-1.5">
+                      {(viewQ?.options ?? []).map((opt, si) => {
+                        const keys = Array.isArray(viewQ?.correctAnswer)
+                          ? (viewQ?.correctAnswer as string[])
+                          : (() => {
+                              try {
+                                return JSON.parse(String(viewQ?.correctAnswer ?? '[]')) as string[];
+                              } catch {
+                                return [] as string[];
+                              }
+                            })();
+                        return (
+                          <li key={si} className="p-2.5 rounded-lg border bg-muted/30 text-sm flex gap-2 justify-between">
+                            <span>
+                              <span className="font-semibold">Langkah {si + 1}:</span> {opt}
+                            </span>
+                            <span className="text-emerald-700 dark:text-emerald-400 font-medium shrink-0">
+                              ✓ {keys[si] ?? '?'}
+                            </span>
+                          </li>
+                        );
+                      })}
+                    </ol>
                   </div>
                 )}
               </CardContent>

@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { Card, CardContent } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
@@ -29,6 +30,7 @@ import {
   Shield,
   WifiOff,
   Wifi,
+  Link2,
 } from 'lucide-react';
 import { OptionImageDisplay, QuestionStemWithImages } from '@/components/shared/question-image-display';
 import { MathText } from '@/components/shared/math-text';
@@ -914,6 +916,14 @@ export default function ExamPage() {
                       className="w-full p-3.5 sm:p-4 rounded-xl border border-input min-h-[140px] text-[15px] sm:text-[16px] leading-relaxed focus-visible:ring-2 focus-visible:ring-ring bg-card"
                     />
                   )}
+
+                  {currentQuestion.type === 'step-by-step' && (
+                    <StepByStepAnswers
+                      steps={currentQuestion.options ?? []}
+                      value={currentAnswer}
+                      onChange={handleAnswer}
+                    />
+                  )}
                 </div>
 
                 {/* Desktop inline bottom actions */}
@@ -1101,6 +1111,107 @@ export default function ExamPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+/** Input jawaban per langkah untuk soal step-by-step.
+ *  Nilai disimpan sebagai JSON object {"1":"..","2":".."} di map jawaban. */
+function StepByStepAnswers({
+  steps,
+  value,
+  onChange,
+}: {
+  steps: string[];
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  let byStep: Record<string, string> = {};
+  if (value.startsWith('{')) {
+    try {
+      byStep = JSON.parse(value) as Record<string, string>;
+    } catch {
+      byStep = {};
+    }
+  } else if (value.trim() && steps.length > 0) {
+    // jawaban lama (teks biasa) dianggap milik langkah 1
+    byStep = { '1': value };
+  }
+
+  const update = (index: number, v: string) => {
+    const next = { ...byStep, [String(index + 1)]: v };
+    if (Object.values(next).every((x) => !x.trim())) {
+      onChange('');
+      return;
+    }
+    onChange(JSON.stringify(next));
+  };
+
+  return (
+    <div className="space-y-3">
+      <p className="text-sm text-muted-foreground">
+        Kerjakan setiap langkah secara berurutan, isi jawaban di kotak masing-masing.
+      </p>
+      {steps.map((step, i) => (
+        <div key={i} className="rounded-xl border border-border bg-card p-3.5 sm:p-4">
+          <div className="flex items-start gap-3">
+            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary text-xs font-bold mt-0.5">
+              {i + 1}
+            </span>
+            <div className="flex-1 min-w-0 space-y-2">
+              <MathText as="p" className="text-[14px] sm:text-[15px] leading-relaxed">
+                {stripMediaMarkersFromText(step)}
+              </MathText>
+              <StepReferenceBadges step={step} currentStep={i + 1} totalSteps={steps.length} byStep={byStep} />
+              <Input
+                value={byStep[String(i + 1)] ?? ''}
+                onChange={(e) => update(i, e.target.value)}
+                placeholder={`Jawaban langkah ${i + 1}…`}
+                className="max-w-xs"
+              />
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** Menandai langkah lain yang disebut dalam teks (mis. "hasil langkah 1") dan
+ *  menampilkan nilai jawaban langkah tersebut saat ini sebagai acuan cepat. */
+function StepReferenceBadges({
+  step,
+  currentStep,
+  totalSteps,
+  byStep,
+}: {
+  step: string;
+  currentStep: number;
+  totalSteps: number;
+  byStep: Record<string, string>;
+}) {
+  const refs = Array.from(new Set(Array.from(step.matchAll(/langkah\s*(\d+)/gi), (m) => Number(m[1]))))
+    .filter((n) => n >= 1 && n <= totalSteps && n !== currentStep);
+
+  if (refs.length === 0) return null;
+
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {refs.map((n) => {
+        const refValue = byStep[String(n)]?.trim();
+        return (
+          <span
+            key={n}
+            className={cn(
+              'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium',
+              refValue ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'
+            )}
+          >
+            <Link2 className="w-3 h-3 shrink-0" />
+            Langkah {n}: {refValue || 'belum diisi'}
+          </span>
+        );
+      })}
     </div>
   );
 }

@@ -15,6 +15,38 @@ function formatAnswer(value?: string | string[]) {
   return value;
 }
 
+/** Detail per langkah untuk soal step-by-step (dari feedback JSON backend). */
+interface StepFeedback {
+  step: number;
+  student: string;
+  key: string;
+  correct: boolean;
+  answered: boolean;
+}
+
+function parseStepFeedback(feedback?: string): StepFeedback[] | null {
+  if (!feedback || !feedback.startsWith('{')) return null;
+  try {
+    const parsed = JSON.parse(feedback) as { kind?: string; steps?: StepFeedback[] };
+    if (parsed.kind !== 'step-by-step' || !Array.isArray(parsed.steps)) return null;
+    return parsed.steps;
+  } catch {
+    return null;
+  }
+}
+
+function parseStepStudentAnswer(value?: string | string[]): Record<string, string> {
+  const raw = Array.isArray(value) ? value.join(',') : (value ?? '');
+  if (raw.startsWith('{')) {
+    try {
+      return JSON.parse(raw) as Record<string, string>;
+    } catch {
+      return {};
+    }
+  }
+  return {};
+}
+
 interface ResultReviewListProps {
   answers: AnswerReview[];
   showAnswerKey: boolean;
@@ -56,6 +88,18 @@ function AnswerReviewCard({
   const q = answer.question;
   const title = q?.title || `Soal ${index}`;
   const typeLabel = q?.type?.replace('-', ' ') ?? '';
+  const stepFeedback = q?.type === 'step-by-step' ? parseStepFeedback(answer.feedback) : null;
+  const stepAnswers = q?.type === 'step-by-step' ? parseStepStudentAnswer(answer.studentAnswer) : {};
+  const stepKeys = (() => {
+    if (q?.type !== 'step-by-step') return [] as string[];
+    const raw = Array.isArray(answer.correctAnswer) ? answer.correctAnswer.join(',') : (answer.correctAnswer ?? '');
+    try {
+      return JSON.parse(raw) as string[];
+    } catch {
+      return [] as string[];
+    }
+  })();
+  const stepInstructions = q?.type === 'step-by-step' ? (q?.options ?? []) : [];
 
   return (
     <Card className="overflow-hidden">
@@ -98,7 +142,60 @@ function AnswerReviewCard({
         </div>
       </CardHeader>
       <CardContent className="space-y-4 pt-0">
-        {q?.options && q.options.length > 0 && (
+        {stepFeedback ? (
+          <div className="space-y-2">
+            <p className="text-xs font-medium text-muted-foreground">
+              Rincian per langkah ({stepFeedback.filter((s) => s.correct).length}/{stepFeedback.length} langkah benar)
+            </p>
+            <ol className="space-y-2">
+              {stepFeedback.map((sf) => {
+                const instruction = stepInstructions[sf.step - 1];
+                const key = stepKeys[sf.step - 1] ?? sf.key;
+                return (
+                  <li
+                    key={sf.step}
+                    className={cn(
+                      'rounded-lg border px-3 py-2 space-y-1.5',
+                      sf.correct ? 'border-emerald-500/50 bg-emerald-500/10' : 'border-destructive/40 bg-destructive/5'
+                    )}
+                  >
+                    <div className="flex items-start gap-2">
+                      <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-muted text-[10px] font-bold">
+                        {sf.step}
+                      </span>
+                      {instruction ? (
+                        <MathText className="text-sm flex-1">{stripMediaMarkersFromText(instruction)}</MathText>
+                      ) : (
+                        <span className="text-sm flex-1 text-muted-foreground">Langkah {sf.step}</span>
+                      )}
+                      {sf.correct ? (
+                        <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                      ) : (
+                        <XCircle className="w-4 h-4 text-destructive shrink-0" />
+                      )}
+                    </div>
+                    <div className="flex flex-wrap gap-x-4 gap-y-1 pl-7 text-xs">
+                      <span>
+                        <span className="text-muted-foreground">Jawaban Anda: </span>
+                        <span className={cn('font-medium', !sf.correct && sf.answered && 'text-destructive')}>
+                          {formatAnswer(stepAnswers[String(sf.step)])}
+                        </span>
+                      </span>
+                      {showAnswerKey && (
+                        <span>
+                          <span className="text-muted-foreground">Kunci: </span>
+                          <span className="font-medium text-emerald-700 dark:text-emerald-400">{formatAnswer(key)}</span>
+                        </span>
+                      )}
+                      {!sf.answered && <span className="text-muted-foreground italic">(tidak diisi)</span>}
+                    </div>
+                  </li>
+                );
+              })}
+            </ol>
+          </div>
+        ) : (
+          q?.options && q.options.length > 0 && (
           <div className="space-y-2">
             <p className="text-xs font-medium text-muted-foreground">Pilihan</p>
             <ul className="space-y-1.5">
@@ -140,26 +237,29 @@ function AnswerReviewCard({
               })}
             </ul>
           </div>
+          )
         )}
 
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div className="rounded-lg bg-muted/50 p-3">
-            <p className="text-xs font-medium text-muted-foreground mb-1">Jawaban Anda</p>
-            <MathText as="p" className="text-sm font-medium">
-              {formatAnswer(answer.studentAnswer)}
-            </MathText>
-          </div>
-          {showAnswerKey && answer.correctAnswer !== undefined && (
-            <div className="rounded-lg bg-emerald-500/10 border border-emerald-500/20 p-3">
-              <p className="text-xs font-medium text-emerald-700 dark:text-emerald-400 mb-1">
-                Kunci Jawaban
-              </p>
+        {!stepFeedback && (
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="rounded-lg bg-muted/50 p-3">
+              <p className="text-xs font-medium text-muted-foreground mb-1">Jawaban Anda</p>
               <MathText as="p" className="text-sm font-medium">
-                {formatAnswer(answer.correctAnswer)}
+                {formatAnswer(answer.studentAnswer)}
               </MathText>
             </div>
-          )}
-        </div>
+            {showAnswerKey && answer.correctAnswer !== undefined && (
+              <div className="rounded-lg bg-emerald-500/10 border border-emerald-500/20 p-3">
+                <p className="text-xs font-medium text-emerald-700 dark:text-emerald-400 mb-1">
+                  Kunci Jawaban
+                </p>
+                <MathText as="p" className="text-sm font-medium">
+                  {formatAnswer(answer.correctAnswer)}
+                </MathText>
+              </div>
+            )}
+          </div>
+        )}
 
         {showAnswerKey && q?.explanation && (
           <div className="rounded-lg border border-dashed p-3">
@@ -170,7 +270,7 @@ function AnswerReviewCard({
           </div>
         )}
 
-        {answer.feedback && (
+        {answer.feedback && !stepFeedback && (
           <div className="rounded-lg bg-primary/5 border border-primary/10 p-3">
             <p className="text-xs font-medium text-muted-foreground mb-1">Feedback guru</p>
             <p className="text-sm whitespace-pre-wrap">{answer.feedback}</p>

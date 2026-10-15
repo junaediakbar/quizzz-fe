@@ -11,7 +11,13 @@ export interface User {
 }
 
 // Question Types
-export type QuestionType = 'multiple-choice' | 'true-false' | 'short-answer' | 'essay' | 'matching' | 'fill-blank';
+export type QuestionType = 'multiple-choice' | 'true-false' | 'short-answer' | 'essay' | 'matching' | 'fill-blank' | 'step-by-step';
+
+/** Satu langkah pengerjaan untuk soal step-by-step (matematika bertahap). */
+export interface QuestionStep {
+  instruction: string;
+  answer: string;
+}
 export type DifficultyLevel = 'easy' | 'medium' | 'hard';
 
 export type { QuestionImage, QuestionImagePosition } from '@/lib/question-images';
