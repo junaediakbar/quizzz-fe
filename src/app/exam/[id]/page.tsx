@@ -5,7 +5,6 @@ import { useParams, useRouter } from 'next/navigation';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Progress } from '@/components/ui/progress';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import {
   Dialog,
@@ -28,7 +27,13 @@ import {
   LayoutGrid,
   Shield,
   WifiOff,
-  Wifi,
+  Check,
+  X,
+  Keyboard,
+  CircleDashed,
+  Send,
+  Cloud,
+  CloudOff,
 } from 'lucide-react';
 import { OptionImageDisplay, QuestionStemWithImages } from '@/components/shared/question-image-display';
 import { MathText } from '@/components/shared/math-text';
@@ -46,6 +51,47 @@ import { toast } from 'sonner';
 type Phase = 'meta' | 'preflight' | 'active' | 'locked' | 'error';
 
 const LS_PREFIX = 'quizzz_exam_draft_';
+
+type SaveState = 'idle' | 'saving' | 'saved' | 'error';
+
+const QUESTION_TYPE_LABEL: Record<string, string> = {
+  'multiple-choice': 'Pilihan ganda',
+  'true-false': 'Benar / Salah',
+  'short-answer': 'Isian singkat',
+  essay: 'Esai',
+  'fill-blank': 'Isian',
+  matching: 'Menjodohkan',
+};
+
+const DIFFICULTY_STYLE: Record<string, { label: string; className: string }> = {
+  easy: { label: 'Mudah', className: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/30' },
+  medium: { label: 'Sedang', className: 'bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/30' },
+  hard: { label: 'Sulit', className: 'bg-rose-500/10 text-rose-700 dark:text-rose-300 border-rose-500/30' },
+};
+
+/** Cincin hitung mundur di sekitar ikon jam. */
+function TimerRing({ pct, className }: { pct: number; className?: string }) {
+  const r = 9;
+  const c = 2 * Math.PI * r;
+  const clamped = Math.max(0, Math.min(1, pct));
+  return (
+    <svg viewBox="0 0 24 24" className={cn('-rotate-90', className)} aria-hidden>
+      <circle cx="12" cy="12" r={r} fill="none" stroke="currentColor" strokeOpacity={0.18} strokeWidth={3} />
+      <circle
+        cx="12"
+        cy="12"
+        r={r}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={3}
+        strokeLinecap="round"
+        strokeDasharray={c}
+        strokeDashoffset={c * (1 - clamped)}
+        className="transition-[stroke-dashoffset] duration-1000 ease-linear"
+      />
+    </svg>
+  );
+}
 
 export default function ExamPage() {
   const params = useParams();
@@ -78,6 +124,7 @@ export default function ExamPage() {
   const [mobileNavigatorOpen, setMobileNavigatorOpen] = useState(false);
   /** Bagian-bagian soal (kosong bila ujian tidak dibagi per bagian) */
   const [examParts, setExamParts] = useState<SessionPart[]>([]);
+  const [saveState, setSaveState] = useState<SaveState>('idle');
 
   // Load exam metadata only (PRD: agree rules → fullscreen → start session)
   useEffect(() => {
@@ -401,10 +448,13 @@ export default function ExamPage() {
 
   const persistAnswer = async (questionId: string, value: string) => {
     if (!sessionId) return;
+    setSaveState('saving');
     try {
       await sessionsApi.submitAnswer(sessionId, { question_id: questionId, answer: value });
+      setSaveState('saved');
     } catch {
       /* queued in localStorage */
+      setSaveState('error');
     }
   };
 
@@ -472,13 +522,53 @@ export default function ExamPage() {
     return 'unanswered';
   };
 
-  const getTimeColor = () => {
-    const total = durationMin * 60 || 1;
-    const pct = (timeRemaining / total) * 100;
-    if (pct > 50) return 'text-foreground';
-    if (pct > 20) return 'text-amber-600';
-    return 'text-destructive';
-  };
+  const timePct = timeRemaining / (durationMin * 60 || 1);
+  const timeUrgency: 'normal' | 'warn' | 'critical' =
+    timePct > 0.5 ? 'normal' : timePct > 0.2 && timeRemaining > 120 ? 'warn' : 'critical';
+
+  const flaggedCount = examQuestions.filter((q) => flaggedQuestions.has(q.id)).length;
+  const unansweredIndexes = examQuestions
+    .map((q, i) => (answers[q.id]?.trim() ? -1 : i))
+    .filter((i) => i >= 0);
+  const flaggedIndexes = examQuestions
+    .map((q, i) => (flaggedQuestions.has(q.id) ? i : -1))
+    .filter((i) => i >= 0);
+  const isLastQuestion = currentQuestionIndex === examQuestions.length - 1;
+
+  // Pintasan keyboard: ← / → pindah soal, A–E pilih opsi, F tandai ragu-ragu.
+  useEffect(() => {
+    if (phase !== 'active' || showSubmitDialog || mobileNavigatorOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === 'TEXTAREA' || t.tagName === 'INPUT' || t.isContentEditable)) return;
+      if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        setCurrentQuestionIndex((i) => Math.min(i + 1, examQuestions.length - 1));
+        return;
+      }
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        setCurrentQuestionIndex((i) => Math.max(i - 1, 0));
+        return;
+      }
+      if (!currentQuestion) return;
+      const key = e.key.toLowerCase();
+      if (key === 'f') {
+        toggleFlag();
+        return;
+      }
+      if (currentQuestion.type === 'multiple-choice' && currentQuestion.options) {
+        const idx = key.length === 1 ? key.charCodeAt(0) - 97 : -1;
+        if (idx >= 0 && idx < currentQuestion.options.length) handleAnswer(currentQuestion.options[idx]);
+      } else if (currentQuestion.type === 'true-false') {
+        if (key === 'b') handleAnswer('true');
+        if (key === 's') handleAnswer('false');
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
 
   if (loading && phase === 'meta') {
     return (
@@ -603,23 +693,103 @@ export default function ExamPage() {
     );
   }
 
+  const difficulty = DIFFICULTY_STYLE[currentQuestion.difficulty] ?? {
+    label: currentQuestion.difficulty,
+    className: 'bg-muted text-muted-foreground border-border',
+  };
+  const isFlagged = flaggedQuestions.has(currentQuestion.id);
+  const wordCount = currentAnswer.trim() ? currentAnswer.trim().split(/\s+/).length : 0;
+
+  const jumpFromDialog = (index: number) => {
+    goToQuestion(index);
+    setShowSubmitDialog(false);
+  };
+
+  const renderNavigatorGrid = (opts: { compact?: boolean; onPick?: () => void }) => (
+    <div className="space-y-3">
+      {questionGroups.map((group, gi) => (
+        <div key={group.part?.id ?? `group-${gi}`} className="space-y-1.5">
+          {examParts.length > 0 && (
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              {group.part?.title ?? 'Tanpa bagian'}
+            </p>
+          )}
+          <div className={cn('grid grid-cols-5', opts.compact ? 'gap-1.5' : 'gap-2')}>
+            {group.items.map(({ q, i: index }) => {
+              const status = getQuestionStatus(q.id);
+              const isCurrent = index === currentQuestionIndex;
+              const answeredToo = status === 'flagged' && !!answers[q.id]?.trim();
+              return (
+                <button
+                  key={q.id}
+                  type="button"
+                  onClick={() => {
+                    goToQuestion(index);
+                    opts.onPick?.();
+                  }}
+                  aria-label={`Soal ${index + 1}`}
+                  aria-current={isCurrent ? 'step' : undefined}
+                  className={cn(
+                    'relative flex w-full items-center justify-center rounded-lg text-xs font-semibold tabular-nums transition-all touch-manipulation active:scale-95',
+                    opts.compact ? 'h-9' : 'h-11',
+                    status === 'answered' &&
+                      'bg-emerald-500 text-white shadow-sm shadow-emerald-500/30 hover:bg-emerald-600',
+                    status === 'flagged' &&
+                      'bg-amber-400 text-amber-950 shadow-sm shadow-amber-500/30 hover:bg-amber-500',
+                    status === 'unanswered' &&
+                      'border border-dashed border-border bg-card text-muted-foreground hover:border-primary/50 hover:text-foreground',
+                    isCurrent && 'ring-2 ring-primary ring-offset-2 ring-offset-card scale-105'
+                  )}
+                >
+                  {index + 1}
+                  {answeredToo && (
+                    <span className="absolute -right-1 -top-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-emerald-500 ring-2 ring-card">
+                      <Check className="h-2.5 w-2.5 text-white" strokeWidth={3} />
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+
+  const statTiles = (
+    <div className="grid grid-cols-3 gap-2">
+      <div className="rounded-xl bg-emerald-500/10 px-2 py-2 text-center">
+        <p className="text-lg font-bold leading-none text-emerald-600 dark:text-emerald-400 tabular-nums">
+          {answeredCount}
+        </p>
+        <p className="mt-1 text-[10px] font-medium text-emerald-700/80 dark:text-emerald-300/80">Terjawab</p>
+      </div>
+      <div className="rounded-xl bg-amber-500/10 px-2 py-2 text-center">
+        <p className="text-lg font-bold leading-none text-amber-600 dark:text-amber-400 tabular-nums">
+          {flaggedCount}
+        </p>
+        <p className="mt-1 text-[10px] font-medium text-amber-700/80 dark:text-amber-300/80">Ragu-ragu</p>
+      </div>
+      <div className="rounded-xl bg-muted px-2 py-2 text-center">
+        <p className="text-lg font-bold leading-none text-foreground tabular-nums">
+          {examQuestions.length - answeredCount}
+        </p>
+        <p className="mt-1 text-[10px] font-medium text-muted-foreground">Belum</p>
+      </div>
+    </div>
+  );
+
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-background bg-linear-to-b from-primary/[0.06] via-background to-background">
       {!online && (
         <div className="bg-amber-100 text-amber-950 text-center text-sm py-2 px-4 border-b border-amber-200 flex items-center justify-center gap-2">
-          <WifiOff className="w-4 h-4" />
-          Connection lost — answers are saved in this browser. They will sync when you are back online.
+          <WifiOff className="w-4 h-4 shrink-0" />
+          Koneksi terputus — jawaban disimpan di browser ini dan akan disinkronkan saat online kembali.
         </div>
       )}
-      {online && phase === 'active' && (
-        <div className="bg-muted/50 text-center text-xs py-1 text-muted-foreground flex items-center justify-center gap-1">
-          <Wifi className="w-3 h-3" /> Connected
-        </div>
-      )}
-
       {showWarning && security.enabled && (
-        <div className="fixed top-0 left-0 right-0 z-50 p-4">
-          <Alert className="max-w-md mx-auto border-amber-500 bg-amber-50">
+        <div className="fixed top-0 left-0 right-0 z-50 p-4 animate-in fade-in slide-in-from-top-4 duration-300">
+          <Alert className="max-w-md mx-auto border-amber-500 bg-amber-50 shadow-lg">
             <AlertTriangle className="h-4 w-4 text-amber-600" />
             <AlertTitle>Peringatan integritas</AlertTitle>
             <AlertDescription className="text-amber-900">
@@ -633,31 +803,70 @@ export default function ExamPage() {
         </div>
       )}
 
-      <header className="border-b border-border bg-card/90 backdrop-blur-sm sticky top-0 z-40">
-        <div className="max-w-5xl mx-auto px-4 py-2.5 sm:py-3 flex items-center justify-between gap-2 sm:gap-4">
-          <div className="min-w-0 flex-1">
-            <h1 className="font-heading font-semibold text-base sm:text-lg truncate">{examTitle}</h1>
-            <p className="text-[11px] sm:text-xs text-muted-foreground truncate">
-              {security.enabled ? 'Sesi terproteksi' : 'Sesi standar'} · Soal {currentQuestionIndex + 1}/{examQuestions.length}
-            </p>
-          </div>
-          <div className="flex items-center gap-2 sm:gap-4 shrink-0">
-            <div className={cn('flex items-center gap-1.5 font-mono text-base sm:text-lg font-semibold px-2 py-1 rounded-md bg-muted/40', getTimeColor())}>
-              <Clock className="w-4 h-4 sm:w-5 sm:h-5 shrink-0" />
-              <span>{formatCountdown(timeRemaining)}</span>
+      <header className="sticky top-0 z-40 border-b border-border/60 bg-card/80 backdrop-blur-md">
+        <div className="max-w-6xl mx-auto px-4 py-2.5 sm:py-3 flex items-center justify-between gap-2 sm:gap-4">
+          <div className="flex min-w-0 flex-1 items-center gap-3">
+            <div className="hidden sm:flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+              <Shield className="h-5 w-5" />
             </div>
-            <div className="hidden md:block w-36 lg:w-40">
-              <div className="flex justify-between text-xs mb-1 text-muted-foreground">
-                <span>Progress</span>
-                <span>
-                  {answeredCount}/{examQuestions.length}
+            <div className="min-w-0">
+              <h1 className="font-heading font-semibold text-base sm:text-lg truncate leading-tight">{examTitle}</h1>
+              <div className="flex items-center gap-1.5 text-[11px] sm:text-xs text-muted-foreground">
+                <span
+                  className={cn(
+                    'inline-block h-1.5 w-1.5 rounded-full',
+                    online ? 'bg-emerald-500' : 'bg-amber-500 animate-pulse'
+                  )}
+                  aria-hidden
+                />
+                <span className="hidden sm:inline truncate">
+                  {security.enabled ? 'Sesi terproteksi' : 'Sesi standar'}
+                </span>
+                <span className="hidden sm:inline" aria-hidden>·</span>
+                <span className="inline-flex items-center gap-1 shrink-0">
+                  {!online || saveState === 'error' ? (
+                    <>
+                      <CloudOff className="h-3 w-3" /> Tersimpan lokal
+                    </>
+                  ) : saveState === 'saving' ? (
+                    <>
+                      <Loader2 className="h-3 w-3 animate-spin" /> Menyimpan…
+                    </>
+                  ) : (
+                    <>
+                      <Cloud className="h-3 w-3" /> {saveState === 'saved' ? 'Tersimpan' : 'Tersinkron'}
+                    </>
+                  )}
                 </span>
               </div>
-              <Progress value={progress} className="h-1.5" />
             </div>
-            <Button variant="outline" size="sm" onClick={toggleFullscreen} className="hidden sm:inline-flex gap-1.5 h-8">
+          </div>
+          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+            <div
+              className={cn(
+                'flex items-center gap-2 rounded-full border px-2.5 py-1 sm:px-3 sm:py-1.5 font-mono text-base sm:text-lg font-bold tabular-nums transition-colors',
+                timeUrgency === 'normal' && 'border-primary/20 bg-primary/5 text-primary',
+                timeUrgency === 'warn' && 'border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400',
+                timeUrgency === 'critical' &&
+                  'border-destructive/40 bg-destructive/10 text-destructive animate-pulse'
+              )}
+              aria-label={`Sisa waktu ${formatCountdown(timeRemaining)}`}
+            >
+              <span className="relative flex h-5 w-5 sm:h-6 sm:w-6 items-center justify-center">
+                <TimerRing pct={timePct} className="absolute inset-0 h-full w-full" />
+                <Clock className="h-2.5 w-2.5 sm:h-3 sm:w-3" />
+              </span>
+              <span>{formatCountdown(timeRemaining)}</span>
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={toggleFullscreen}
+              className="hidden sm:inline-flex gap-1.5 h-8"
+              title={isFullscreen ? 'Keluar mode fokus' : 'Mode fokus (layar penuh)'}
+            >
               {isFullscreen ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-              <span className="hidden sm:inline">Focus</span>
+              <span className="hidden md:inline">Fokus</span>
             </Button>
             <Button
               variant="outline"
@@ -667,176 +876,149 @@ export default function ExamPage() {
               aria-label="Daftar Soal"
             >
               <LayoutGrid className="w-4 h-4" />
-              <span className="text-xs font-medium">{answeredCount}/{examQuestions.length}</span>
+              <span className="text-xs font-medium tabular-nums">{answeredCount}/{examQuestions.length}</span>
             </Button>
-            <Button size="sm" onClick={handleSubmit} className="gap-1.5 h-8">
-              <CheckCircle2 className="w-3.5 h-3.5" />
+            <Button size="sm" onClick={handleSubmit} className="gap-1.5 h-8 shadow-sm shadow-primary/30">
+              <Send className="w-3.5 h-3.5" />
               <span className="text-xs sm:text-sm font-medium">Kirim</span>
             </Button>
           </div>
         </div>
-        {/* Mobile top thin progress indicator */}
-        <div className="h-1 w-full bg-muted md:hidden">
+        {/* Progress bar jawaban — seluruh lebar */}
+        <div className="h-1 w-full bg-muted/70">
           <div
-            className="h-full bg-primary transition-all duration-300 ease-out"
+            className="h-full rounded-r-full bg-linear-to-r from-primary to-emerald-500 transition-all duration-500 ease-out"
             style={{ width: `${progress}%` }}
           />
         </div>
       </header>
 
-      <div className="max-w-5xl mx-auto px-4 py-4 sm:py-6 flex flex-col lg:flex-row gap-6 pb-24 md:pb-6">
-        <aside className="hidden lg:block w-56 shrink-0 space-y-4">
-          <Card className="border-border sticky top-20">
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="font-heading text-sm font-semibold">Navigator Soal</h3>
-                <span className="text-xs text-muted-foreground">{answeredCount}/{examQuestions.length}</span>
-              </div>
-              <div className="grid grid-cols-5 gap-1.5 max-h-[60vh] overflow-y-auto p-0.5">
-                {questionGroups.map((group, gi) => (
-                  <div key={group.part?.id ?? `group-${gi}`} className="col-span-5 space-y-1.5">
-                    {examParts.length > 0 && (
-                      <p className="pt-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                        {group.part?.title ?? 'Tanpa bagian'}
-                      </p>
-                    )}
-                    <div className="grid grid-cols-5 gap-1.5">
-                      {group.items.map(({ q, i: index }) => {
-                        const status = getQuestionStatus(q.id);
-                        const isCurrent = index === currentQuestionIndex;
-                        return (
-                          <button
-                            key={q.id}
-                            type="button"
-                            onClick={() => goToQuestion(index)}
-                            className={cn(
-                              'h-9 w-full rounded-md text-xs font-medium transition-all touch-manipulation flex items-center justify-center',
-                              isCurrent && 'ring-2 ring-primary ring-offset-2 font-bold shadow-sm',
-                              status === 'answered' && 'bg-emerald-600 text-white hover:bg-emerald-700',
-                              status === 'flagged' && 'bg-amber-500 text-white hover:bg-amber-600',
-                              status === 'unanswered' && 'bg-muted hover:bg-muted/80 text-foreground'
-                            )}
-                          >
-                            {index + 1}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <div className="mt-4 pt-3 border-t border-border space-y-1.5 text-[11px] text-muted-foreground">
-                <div className="flex items-center gap-2">
-                  <span className="w-3 h-3 rounded bg-emerald-600 shrink-0" />
-                  <span>Terjawab</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="w-3 h-3 rounded bg-amber-500 shrink-0" />
-                  <span>Ragu-ragu (Flag)</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="w-3 h-3 rounded bg-muted border shrink-0" />
-                  <span>Belum dijawab</span>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </aside>
-
-        <main className="flex-1 min-w-0">
+      <div className="max-w-6xl mx-auto px-4 py-4 sm:py-6 flex flex-col lg:flex-row gap-6 pb-28 md:pb-10">
+        <main className="flex-1 min-w-0 order-1">
           <div
             className={cn(
               'transition-[filter] duration-300',
               pageHidden && security.detectFocusLoss && 'blur-md pointer-events-none select-none'
             )}
           >
-            <Card className="border-border border-t-[3px] border-t-primary shadow-sm">
-              <CardContent className="p-4 sm:p-6 md:p-8">
-                {currentPart && (
-                  <div className="mb-4 rounded-lg border border-primary/25 bg-primary/5 px-3 py-2 sm:mb-6">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <p className="font-heading text-sm font-semibold">{currentPart.title}</p>
-                      <span className="text-[11px] text-muted-foreground">
-                        Soal {indexInPart} dari {currentPart.questionCount} di bagian ini
-                      </span>
-                    </div>
-                    {currentPart.description ? (
-                      <p className="mt-1 text-xs text-muted-foreground">{currentPart.description}</p>
-                    ) : null}
+            {currentPart && (
+              <div className="mb-4 flex items-start gap-3 rounded-2xl border border-primary/20 bg-card/70 px-4 py-3 shadow-xs backdrop-blur-sm">
+                <div className="mt-0.5 h-8 w-1 shrink-0 rounded-full bg-primary" aria-hidden />
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="font-heading text-sm font-semibold">{currentPart.title}</p>
+                    <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary tabular-nums">
+                      {indexInPart} / {currentPart.questionCount}
+                    </span>
                   </div>
-                )}
-                <div className="flex items-center justify-between gap-2 mb-4 sm:mb-6">
-                  <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
-                    <Badge variant="outline" className="text-sm sm:text-base px-2 sm:px-2.5 py-0.5 font-heading">
-                      Soal #{currentQuestionIndex + 1}
-                    </Badge>
-                    <Badge variant="secondary" className="text-xs">{currentQuestion.points} poin</Badge>
-                    <Badge variant="outline" className="capitalize text-xs">
-                      {currentQuestion.difficulty}
-                    </Badge>
+                  {currentPart.description ? (
+                    <p className="mt-1 text-xs text-muted-foreground">{currentPart.description}</p>
+                  ) : null}
+                </div>
+              </div>
+            )}
+
+            <Card className="overflow-hidden rounded-2xl border-border/70 shadow-lg shadow-primary/5">
+              <CardContent className="p-0">
+                <div className="flex items-center justify-between gap-3 border-b border-border/60 bg-muted/30 px-4 py-3 sm:px-6 sm:py-4">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <div className="flex h-11 w-11 sm:h-12 sm:w-12 shrink-0 items-center justify-center rounded-2xl bg-linear-to-br from-primary to-primary/70 text-lg sm:text-xl font-bold text-primary-foreground shadow-md shadow-primary/30 tabular-nums">
+                      {currentQuestionIndex + 1}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs text-muted-foreground tabular-nums">
+                        Soal {currentQuestionIndex + 1} dari {examQuestions.length}
+                      </p>
+                      <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                        <Badge variant="outline" className="text-[11px] font-medium">
+                          {QUESTION_TYPE_LABEL[currentQuestion.type] ?? currentQuestion.type}
+                        </Badge>
+                        <Badge variant="outline" className={cn('text-[11px] font-medium', difficulty.className)}>
+                          {difficulty.label}
+                        </Badge>
+                        <Badge variant="secondary" className="text-[11px] font-semibold">
+                          {currentQuestion.points} poin
+                        </Badge>
+                      </div>
+                    </div>
                   </div>
                   <Button
                     variant="outline"
                     size="sm"
                     onClick={toggleFlag}
+                    aria-pressed={isFlagged}
                     className={cn(
-                      'h-8 px-2.5 text-xs sm:text-sm touch-manipulation',
-                      flaggedQuestions.has(currentQuestion.id) &&
-                        'bg-amber-500/15 border-amber-500/60 text-amber-700 dark:text-amber-300 font-medium'
+                      'h-9 shrink-0 rounded-full px-3 text-xs sm:text-sm touch-manipulation transition-all',
+                      isFlagged &&
+                        'bg-amber-400/20 border-amber-500/60 text-amber-700 dark:text-amber-300 font-semibold hover:bg-amber-400/30'
                     )}
                   >
-                    <Flag className={cn("w-3.5 h-3.5 mr-1.5", flaggedQuestions.has(currentQuestion.id) && "fill-amber-500 text-amber-500")} />
-                    <span>{flaggedQuestions.has(currentQuestion.id) ? 'Ragu-ragu' : 'Tandai'}</span>
+                    <Flag className={cn('w-3.5 h-3.5 sm:mr-1.5', isFlagged && 'fill-amber-500 text-amber-500')} />
+                    <span className="hidden sm:inline">{isFlagged ? 'Ragu-ragu' : 'Tandai ragu'}</span>
                   </Button>
                 </div>
 
-                <div className="mb-6 sm:mb-8">
-                  <QuestionStemWithImages
-                    title={currentQuestion.title}
-                    content={currentQuestion.content}
-                    images={currentQuestion.images}
-                    imageUrls={currentQuestion.imageUrls}
-                    titleClassName="text-base sm:text-lg md:text-[18px] font-medium leading-relaxed mb-3 font-heading"
-                    contentClassName="text-[15px] sm:text-[16px] md:text-[18px] leading-relaxed text-foreground/90"
-                  />
-                </div>
+                <div
+                  key={currentQuestion.id}
+                  className="p-4 sm:p-6 md:p-8 animate-in fade-in slide-in-from-bottom-2 duration-300"
+                >
+                  <div className="mb-6 sm:mb-8">
+                    <QuestionStemWithImages
+                      title={currentQuestion.title}
+                      content={currentQuestion.content}
+                      images={currentQuestion.images}
+                      imageUrls={currentQuestion.imageUrls}
+                      titleClassName="text-base sm:text-lg md:text-[19px] font-semibold leading-relaxed mb-3 font-heading"
+                      contentClassName="text-[15px] sm:text-[16px] md:text-[18px] leading-relaxed text-foreground/90"
+                    />
+                  </div>
 
-                <div className="space-y-3">
                   {currentQuestion.type === 'multiple-choice' && currentQuestion.options && (
-                    <div className="space-y-2.5">
+                    <div className="space-y-2.5 sm:space-y-3" role="radiogroup" aria-label="Pilihan jawaban">
                       {currentQuestion.options.map((option, index) => {
                         const isSelected = currentAnswer === option;
+                        const letter = String.fromCharCode(65 + index);
                         return (
                           <button
                             key={index}
                             type="button"
+                            role="radio"
+                            aria-checked={isSelected}
                             onClick={() => handleAnswer(option)}
                             className={cn(
-                              'w-full text-left p-3.5 sm:p-4 rounded-xl border text-[14px] sm:text-[15px] md:text-[16px] transition-all flex items-start gap-3 touch-manipulation cursor-pointer',
+                              'group relative w-full text-left p-3.5 sm:p-4 rounded-2xl border-2 text-[14px] sm:text-[15px] md:text-[16px] transition-all duration-200 flex items-start gap-3 sm:gap-4 touch-manipulation cursor-pointer',
                               isSelected
-                                ? 'border-primary bg-primary/10 ring-1 ring-primary shadow-xs font-medium text-foreground'
-                                : 'border-border bg-card hover:bg-muted/40 hover:border-primary/40 active:scale-[0.99]'
+                                ? 'border-primary bg-primary/[0.07] shadow-md shadow-primary/10 font-medium text-foreground'
+                                : 'border-border/70 bg-card hover:border-primary/40 hover:bg-primary/[0.03] hover:-translate-y-0.5 hover:shadow-sm active:translate-y-0 active:scale-[0.99]'
                             )}
                           >
                             <span
                               className={cn(
-                                'flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-bold transition-colors mt-0.5',
+                                'flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-sm font-bold transition-all',
                                 isSelected
-                                  ? 'bg-primary text-primary-foreground'
-                                  : 'bg-muted text-muted-foreground'
+                                  ? 'bg-primary text-primary-foreground shadow-sm shadow-primary/40 scale-110'
+                                  : 'bg-muted text-muted-foreground group-hover:bg-primary/15 group-hover:text-primary'
                               )}
                             >
-                              {String.fromCharCode(65 + index)}
+                              {letter}
                             </span>
-                            <div className="flex-1 min-w-0 space-y-2">
+                            <div className="flex-1 min-w-0 space-y-2 pt-1">
                               <MathText className="leading-relaxed">
                                 {stripMediaMarkersFromText(option)}
                               </MathText>
-                              <OptionImageDisplay
-                                images={currentQuestion.images}
-                                optionIndex={index}
-                              />
+                              <OptionImageDisplay images={currentQuestion.images} optionIndex={index} />
                             </div>
+                            <span
+                              className={cn(
+                                'mt-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 transition-all',
+                                isSelected
+                                  ? 'border-primary bg-primary text-primary-foreground animate-in zoom-in-50 duration-200'
+                                  : 'border-border/80 text-transparent'
+                              )}
+                              aria-hidden
+                            >
+                              <Check className="h-3.5 w-3.5" strokeWidth={3} />
+                            </span>
                           </button>
                         );
                       })}
@@ -844,22 +1026,40 @@ export default function ExamPage() {
                   )}
 
                   {currentQuestion.type === 'true-false' && (
-                    <div className="grid grid-cols-2 gap-3">
-                      {['True', 'False'].map((option) => {
-                        const isSelected = currentAnswer === option.toLowerCase();
+                    <div className="grid grid-cols-2 gap-3 sm:gap-4" role="radiogroup" aria-label="Pilihan jawaban">
+                      {(['true', 'false'] as const).map((value) => {
+                        const isSelected = currentAnswer === value;
+                        const isTrue = value === 'true';
+                        const Icon = isTrue ? Check : X;
                         return (
                           <button
-                            key={option}
+                            key={value}
                             type="button"
-                            onClick={() => handleAnswer(option.toLowerCase())}
+                            role="radio"
+                            aria-checked={isSelected}
+                            onClick={() => handleAnswer(value)}
                             className={cn(
-                              'p-4 sm:p-5 rounded-xl border-2 font-medium text-center transition-all touch-manipulation active:scale-[0.98]',
+                              'group flex flex-col items-center justify-center gap-2 rounded-2xl border-2 p-5 sm:p-7 font-semibold transition-all duration-200 touch-manipulation active:scale-[0.98]',
                               isSelected
-                                ? 'border-primary bg-primary/10 text-primary font-bold ring-1 ring-primary'
-                                : 'border-border bg-card hover:bg-muted/40 hover:border-primary/40'
+                                ? isTrue
+                                  ? 'border-emerald-500 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 shadow-md shadow-emerald-500/15'
+                                  : 'border-rose-500 bg-rose-500/10 text-rose-700 dark:text-rose-300 shadow-md shadow-rose-500/15'
+                                : 'border-border/70 bg-card hover:-translate-y-0.5 hover:shadow-sm hover:border-primary/40'
                             )}
                           >
-                            {option === 'True' ? 'Benar (True)' : 'Salah (False)'}
+                            <span
+                              className={cn(
+                                'flex h-12 w-12 items-center justify-center rounded-full transition-all',
+                                isSelected
+                                  ? isTrue
+                                    ? 'bg-emerald-500 text-white scale-110'
+                                    : 'bg-rose-500 text-white scale-110'
+                                  : 'bg-muted text-muted-foreground'
+                              )}
+                            >
+                              <Icon className="h-6 w-6" strokeWidth={3} />
+                            </span>
+                            <span>{isTrue ? 'Benar' : 'Salah'}</span>
                           </button>
                         );
                       })}
@@ -869,37 +1069,80 @@ export default function ExamPage() {
                   {(currentQuestion.type === 'short-answer' ||
                     currentQuestion.type === 'essay' ||
                     currentQuestion.type === 'fill-blank') && (
-                    <textarea
-                      value={currentAnswer}
-                      onChange={(e) => handleAnswer(e.target.value)}
-                      placeholder="Tuliskan jawaban Anda di sini…"
-                      className="w-full p-3.5 sm:p-4 rounded-xl border border-input min-h-[140px] text-[15px] sm:text-[16px] leading-relaxed focus-visible:ring-2 focus-visible:ring-ring bg-card"
-                    />
+                    <div className="rounded-2xl border-2 border-border/70 bg-card transition-colors focus-within:border-primary focus-within:shadow-md focus-within:shadow-primary/10">
+                      <textarea
+                        value={currentAnswer}
+                        onChange={(e) => handleAnswer(e.target.value)}
+                        placeholder="Tuliskan jawaban Anda di sini…"
+                        className={cn(
+                          'w-full resize-y rounded-2xl bg-transparent p-4 text-[15px] sm:text-[16px] leading-relaxed outline-none focus:ring-0! focus-visible:ring-0!',
+                          currentQuestion.type === 'essay' ? 'min-h-[220px]' : 'min-h-[120px]'
+                        )}
+                      />
+                      <div className="flex items-center justify-between border-t border-border/60 px-4 py-2 text-[11px] text-muted-foreground">
+                        <span className="tabular-nums">{wordCount} kata</span>
+                        <span className="inline-flex items-center gap-1">
+                          {currentAnswer.trim() ? (
+                            <>
+                              <CheckCircle2 className="h-3 w-3 text-emerald-500" /> Tersimpan otomatis
+                            </>
+                          ) : (
+                            <>
+                              <CircleDashed className="h-3 w-3" /> Belum dijawab
+                            </>
+                          )}
+                        </span>
+                      </div>
+                    </div>
                   )}
                 </div>
 
                 {/* Desktop inline bottom actions */}
-                <div className="hidden md:flex items-center justify-between mt-8 pt-5 border-t border-border">
+                <div className="hidden md:flex items-center justify-between gap-4 border-t border-border/60 bg-muted/20 px-6 py-4">
                   <Button
                     variant="outline"
                     onClick={goToPrevious}
                     disabled={currentQuestionIndex === 0}
-                    className="touch-manipulation"
+                    className="touch-manipulation rounded-full"
                   >
                     <ChevronLeft className="w-4 h-4 mr-1" />
                     Sebelumnya
                   </Button>
-                  <div className="text-xs text-muted-foreground">
-                    {currentQuestionIndex + 1} dari {examQuestions.length}
-                  </div>
-                  <Button
-                    onClick={goToNext}
-                    disabled={currentQuestionIndex === examQuestions.length - 1}
-                    className="touch-manipulation"
-                  >
-                    Selanjutnya
-                    <ChevronRight className="w-4 h-4 ml-1" />
-                  </Button>
+                  <p className="hidden lg:flex items-center gap-1 text-[11px] text-muted-foreground">
+                    <Keyboard className="h-3.5 w-3.5" />
+                    <kbd className="rounded border bg-card px-1 font-mono">←</kbd>
+                    <kbd className="rounded border bg-card px-1 font-mono">→</kbd> pindah
+                    {currentQuestion.type === 'multiple-choice' && (
+                      <>
+                        <span aria-hidden>·</span> <kbd className="rounded border bg-card px-1 font-mono">A</kbd>–
+                        <kbd className="rounded border bg-card px-1 font-mono">
+                          {String.fromCharCode(64 + (currentQuestion.options?.length || 1))}
+                        </kbd>{' '}
+                        pilih
+                      </>
+                    )}
+                    {currentQuestion.type === 'true-false' && (
+                      <>
+                        <span aria-hidden>·</span> <kbd className="rounded border bg-card px-1 font-mono">B</kbd>/
+                        <kbd className="rounded border bg-card px-1 font-mono">S</kbd> pilih
+                      </>
+                    )}
+                    <span aria-hidden>·</span> <kbd className="rounded border bg-card px-1 font-mono">F</kbd> ragu
+                  </p>
+                  {isLastQuestion ? (
+                    <Button
+                      onClick={handleSubmit}
+                      className="touch-manipulation rounded-full bg-emerald-600 text-white hover:bg-emerald-700"
+                    >
+                      Selesai & kirim
+                      <Send className="w-4 h-4 ml-1.5" />
+                    </Button>
+                  ) : (
+                    <Button onClick={goToNext} className="touch-manipulation rounded-full">
+                      Selanjutnya
+                      <ChevronRight className="w-4 h-4 ml-1" />
+                    </Button>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -910,125 +1153,104 @@ export default function ExamPage() {
             </p>
           )}
         </main>
+
+        <aside className="hidden lg:block w-64 shrink-0 order-2">
+          <Card className="sticky top-24 rounded-2xl border-border/70 shadow-lg shadow-primary/5">
+            <CardContent className="p-4 space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="font-heading text-sm font-semibold">Navigator Soal</h3>
+                <span className="text-xs font-medium text-muted-foreground tabular-nums">
+                  {Math.round(progress)}%
+                </span>
+              </div>
+              {statTiles}
+              <div className="max-h-[52vh] overflow-y-auto p-1 -m-1">{renderNavigatorGrid({ compact: true })}</div>
+              <div className="flex flex-wrap gap-x-3 gap-y-1.5 border-t border-border/60 pt-3 text-[11px] text-muted-foreground">
+                <span className="flex items-center gap-1.5">
+                  <span className="h-2.5 w-2.5 rounded bg-emerald-500" /> Terjawab
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span className="h-2.5 w-2.5 rounded bg-amber-400" /> Ragu-ragu
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span className="h-2.5 w-2.5 rounded border border-dashed border-muted-foreground/50" /> Belum
+                </span>
+              </div>
+            </CardContent>
+          </Card>
+        </aside>
       </div>
 
       {/* Floating Bottom Sticky Bar for Mobile */}
-      <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-card/95 backdrop-blur-md border-t border-border px-3 py-2 safe-area-pb shadow-lg">
+      <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 border-t border-border/60 bg-card/90 backdrop-blur-md px-3 pt-2 safe-area-pb shadow-[0_-8px_24px_-12px_rgba(0,0,0,0.15)]">
         <div className="flex items-center justify-between gap-2">
           <Button
             variant="outline"
             size="sm"
             onClick={goToPrevious}
             disabled={currentQuestionIndex === 0}
-            className="flex-1 h-10 touch-manipulation text-xs font-medium"
+            className="h-11 w-11 shrink-0 rounded-full p-0 touch-manipulation"
+            aria-label="Soal sebelumnya"
           >
-            <ChevronLeft className="w-4 h-4 mr-1 shrink-0" />
-            Prev
+            <ChevronLeft className="w-5 h-5" />
           </Button>
 
-          <Button
-            variant="secondary"
-            size="sm"
+          <button
+            type="button"
             onClick={() => setMobileNavigatorOpen(true)}
-            className="h-10 px-3 touch-manipulation flex items-center gap-1.5"
+            className="flex min-w-0 flex-1 flex-col items-center gap-1 rounded-xl px-2 py-1 touch-manipulation active:bg-muted"
             aria-label="Buka navigasi soal"
           >
-            <LayoutGrid className="w-4 h-4 text-primary" />
-            <span className="text-xs font-semibold">
-              {currentQuestionIndex + 1}/{examQuestions.length}
+            <span className="flex items-center gap-1.5 text-xs font-semibold tabular-nums">
+              <LayoutGrid className="h-3.5 w-3.5 text-primary" />
+              Soal {currentQuestionIndex + 1} / {examQuestions.length}
+              {isFlagged && <Flag className="h-3 w-3 fill-amber-500 text-amber-500" />}
             </span>
-          </Button>
+            <span className="h-1 w-full max-w-[140px] overflow-hidden rounded-full bg-muted">
+              <span
+                className="block h-full rounded-full bg-primary transition-all duration-300"
+                style={{ width: `${((currentQuestionIndex + 1) / examQuestions.length) * 100}%` }}
+              />
+            </span>
+          </button>
 
-          <Button
-            variant="default"
-            size="sm"
-            onClick={goToNext}
-            disabled={currentQuestionIndex === examQuestions.length - 1}
-            className="flex-1 h-10 touch-manipulation text-xs font-medium"
-          >
-            Next
-            <ChevronRight className="w-4 h-4 ml-1 shrink-0" />
-          </Button>
+          {isLastQuestion ? (
+            <Button
+              size="sm"
+              onClick={handleSubmit}
+              className="h-11 shrink-0 rounded-full px-4 touch-manipulation bg-emerald-600 text-white hover:bg-emerald-700"
+            >
+              Kirim
+              <Send className="w-4 h-4 ml-1.5" />
+            </Button>
+          ) : (
+            <Button
+              size="sm"
+              onClick={goToNext}
+              className="h-11 w-11 shrink-0 rounded-full p-0 touch-manipulation shadow-md shadow-primary/30"
+              aria-label="Soal selanjutnya"
+            >
+              <ChevronRight className="w-5 h-5" />
+            </Button>
+          )}
         </div>
       </div>
 
       {/* Dialog Drawer / Sheet for Mobile Navigator */}
       <Dialog open={mobileNavigatorOpen} onOpenChange={setMobileNavigatorOpen}>
         <DialogContent className="max-w-md w-[92vw] sm:max-w-lg max-h-[85vh] flex flex-col p-4 sm:p-6 rounded-2xl">
-          <DialogHeader className="pb-2 border-b border-border">
-            <div className="flex items-center justify-between">
-              <DialogTitle className="text-base sm:text-lg font-heading">Navigasi Semua Soal</DialogTitle>
-              <Badge variant="outline" className="text-xs">
-                {answeredCount}/{examQuestions.length} Terjawab
-              </Badge>
-            </div>
+          <DialogHeader className="pb-2">
+            <DialogTitle className="text-base sm:text-lg font-heading">Navigasi Soal</DialogTitle>
             <DialogDescription className="text-xs">
-              Pilih nomor soal untuk langsung berpindah halaman.
+              Pilih nomor soal untuk langsung berpindah.
             </DialogDescription>
           </DialogHeader>
-
-          <div className="flex-1 overflow-y-auto py-3 space-y-3">
-            {questionGroups.map((group, gi) => (
-              <div key={group.part?.id ?? `m-group-${gi}`} className="space-y-2">
-                {examParts.length > 0 && (
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                    {group.part?.title ?? 'Tanpa bagian'}
-                  </p>
-                )}
-                <div className="grid grid-cols-5 gap-2">
-                  {group.items.map(({ q, i: index }) => {
-                    const status = getQuestionStatus(q.id);
-                    const isCurrent = index === currentQuestionIndex;
-                    return (
-                      <button
-                        key={q.id}
-                        type="button"
-                        onClick={() => {
-                          goToQuestion(index);
-                          setMobileNavigatorOpen(false);
-                        }}
-                        className={cn(
-                          'h-11 rounded-lg text-xs font-medium transition-all touch-manipulation flex flex-col items-center justify-center relative active:scale-95',
-                          isCurrent && 'ring-2 ring-primary ring-offset-2 font-bold shadow-sm',
-                          status === 'answered' && 'bg-emerald-600 text-white',
-                          status === 'flagged' && 'bg-amber-500 text-white',
-                          status === 'unanswered' && 'bg-muted text-foreground'
-                        )}
-                      >
-                        <span>{index + 1}</span>
-                        {flaggedQuestions.has(q.id) && (
-                          <span className="w-1.5 h-1.5 rounded-full bg-white absolute top-1 right-1" />
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            ))}
-
-            <div className="mt-4 pt-3 border-t border-border grid grid-cols-3 gap-2 text-[11px] text-muted-foreground">
-              <div className="flex items-center gap-1.5">
-                <span className="w-2.5 h-2.5 rounded bg-emerald-600 shrink-0" />
-                <span>Terjawab</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <span className="w-2.5 h-2.5 rounded bg-amber-500 shrink-0" />
-                <span>Ragu-ragu</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <span className="w-2.5 h-2.5 rounded bg-muted border shrink-0" />
-                <span>Belum</span>
-              </div>
-            </div>
+          {statTiles}
+          <div className="flex-1 overflow-y-auto py-3 px-1 -mx-1">
+            {renderNavigatorGrid({ onPick: () => setMobileNavigatorOpen(false) })}
           </div>
-
           <DialogFooter className="pt-2 border-t border-border flex flex-row gap-2 justify-between sm:justify-between">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setMobileNavigatorOpen(false)}
-              className="flex-1"
-            >
+            <Button variant="outline" size="sm" onClick={() => setMobileNavigatorOpen(false)} className="flex-1">
               Tutup
             </Button>
             <Button
@@ -1039,6 +1261,7 @@ export default function ExamPage() {
               }}
               className="flex-1"
             >
+              <Send className="w-3.5 h-3.5 mr-1.5" />
               Kirim Ujian
             </Button>
           </DialogFooter>
@@ -1046,19 +1269,95 @@ export default function ExamPage() {
       </Dialog>
 
       <Dialog open={showSubmitDialog} onOpenChange={setShowSubmitDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Submit exam?</DialogTitle>
+        <DialogContent className="rounded-2xl sm:max-w-md">
+          <DialogHeader className="items-center text-center">
+            <div
+              className={cn(
+                'mx-auto mb-2 flex h-14 w-14 items-center justify-center rounded-full',
+                unansweredIndexes.length === 0 ? 'bg-emerald-500/15 text-emerald-600' : 'bg-amber-500/15 text-amber-600'
+              )}
+            >
+              {unansweredIndexes.length === 0 ? (
+                <CheckCircle2 className="h-7 w-7" />
+              ) : (
+                <AlertTriangle className="h-7 w-7" />
+              )}
+            </div>
+            <DialogTitle className="font-heading">Kirim jawaban sekarang?</DialogTitle>
             <DialogDescription>
-              You answered {answeredCount} of {examQuestions.length} questions.
+              {timeRemaining <= 0
+                ? 'Waktu ujian telah habis. Kirim jawaban Anda untuk menyelesaikan ujian.'
+                : unansweredIndexes.length === 0
+                  ? 'Semua soal sudah dijawab. Jawaban tidak dapat diubah setelah dikirim.'
+                  : `Masih ada ${unansweredIndexes.length} soal yang belum dijawab.`}
             </DialogDescription>
           </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowSubmitDialog(false)}>
-              Continue
-            </Button>
-            <Button onClick={confirmSubmit} disabled={submitting}>
-              {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Submit'}
+
+          {statTiles}
+
+          {(unansweredIndexes.length > 0 || flaggedIndexes.length > 0) && timeRemaining > 0 && (
+            <div className="space-y-3 rounded-xl border border-border/70 bg-muted/30 p-3">
+              {unansweredIndexes.length > 0 && (
+                <div>
+                  <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    Belum dijawab
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {unansweredIndexes.slice(0, 30).map((i) => (
+                      <button
+                        key={i}
+                        type="button"
+                        onClick={() => jumpFromDialog(i)}
+                        className="h-7 min-w-7 rounded-md border border-dashed border-border bg-card px-1.5 text-xs font-semibold tabular-nums hover:border-primary hover:text-primary"
+                      >
+                        {i + 1}
+                      </button>
+                    ))}
+                    {unansweredIndexes.length > 30 && (
+                      <span className="self-center text-xs text-muted-foreground">
+                        +{unansweredIndexes.length - 30} lagi
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
+              {flaggedIndexes.length > 0 && (
+                <div>
+                  <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    Ditandai ragu-ragu
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {flaggedIndexes.slice(0, 30).map((i) => (
+                      <button
+                        key={i}
+                        type="button"
+                        onClick={() => jumpFromDialog(i)}
+                        className="h-7 min-w-7 rounded-md bg-amber-400 px-1.5 text-xs font-semibold text-amber-950 tabular-nums hover:bg-amber-500"
+                      >
+                        {i + 1}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          <DialogFooter className="gap-2 sm:gap-2">
+            {timeRemaining > 0 && (
+              <Button variant="outline" onClick={() => setShowSubmitDialog(false)} className="sm:flex-1">
+                Lanjut mengerjakan
+              </Button>
+            )}
+            <Button onClick={confirmSubmit} disabled={submitting} className="sm:flex-1">
+              {submitting ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <>
+                  <Send className="w-4 h-4 mr-1.5" />
+                  Ya, kirim
+                </>
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>
