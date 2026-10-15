@@ -340,6 +340,17 @@ export default function ExamPage() {
     };
   }, [phase, recordViolation, security]);
 
+  const syncAnswersToServer = async () => {
+    if (!sessionId) return;
+    for (const [qid, ans] of Object.entries(answers)) {
+      try {
+        await sessionsApi.submitAnswer(sessionId, { question_id: qid, answer: ans });
+      } catch {
+        /* retry later */
+      }
+    }
+  };
+
   useEffect(() => {
     if (phase !== 'active' || !sessionId) return;
     const onOnline = () => {
@@ -360,16 +371,6 @@ export default function ExamPage() {
     };
   }, [phase, sessionId, answers]);
 
-  const syncAnswersToServer = async () => {
-    if (!sessionId) return;
-    for (const [qid, ans] of Object.entries(answers)) {
-      try {
-        await sessionsApi.submitAnswer(sessionId, { question_id: qid, answer: ans });
-      } catch {
-        /* retry later */
-      }
-    }
-  };
 
   useEffect(() => {
     if (phase !== 'active' || !sessionId) return;
@@ -751,7 +752,7 @@ export default function ExamPage() {
                             onClick={() => goToQuestion(index)}
                             className={cn(
                               'h-9 w-full rounded-md text-xs font-medium transition-all touch-manipulation flex items-center justify-center',
-                              isCurrent && 'ring-2 ring-primary ring-offset-2 font-bold shadow-sm',
+                              isCurrent && 'ring-2 ring-inset ring-primary font-bold shadow-sm',
                               status === 'answered' && 'bg-emerald-600 text-white hover:bg-emerald-700',
                               status === 'flagged' && 'bg-amber-500 text-white hover:bg-amber-600',
                               status === 'unanswered' && 'bg-muted hover:bg-muted/80 text-foreground'
@@ -1037,7 +1038,7 @@ export default function ExamPage() {
                         }}
                         className={cn(
                           'h-11 rounded-lg text-xs font-medium transition-all touch-manipulation flex flex-col items-center justify-center relative active:scale-95',
-                          isCurrent && 'ring-2 ring-primary ring-offset-2 font-bold shadow-sm',
+                          isCurrent && 'ring-2 ring-inset ring-primary font-bold shadow-sm',
                           status === 'answered' && 'bg-emerald-600 text-white',
                           status === 'flagged' && 'bg-amber-500 text-white',
                           status === 'unanswered' && 'bg-muted text-foreground'
