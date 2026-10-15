@@ -35,7 +35,7 @@ import { MathText } from '@/components/shared/math-text';
 import { stripMediaMarkersFromText } from '@/lib/question-images';
 import { cn, formatCountdown, clampSeconds } from '@/lib/utils';
 import { Question } from '@/lib/types';
-import { examsApi, sessionsApi, type SessionPart } from '@/lib/api';
+import { examsApi, sessionsApi, type AttemptStatus, type SessionPart } from '@/lib/api';
 import {
   DEFAULT_EXAM_SECURITY,
   securityFromExamConfig,
@@ -57,6 +57,8 @@ export default function ExamPage() {
   const [examTitle, setExamTitle] = useState('Exam');
   const [durationMin, setDurationMin] = useState(60);
   const [questionCount, setQuestionCount] = useState(0);
+  /** Status attempt murid (null = tidak diketahui, tombol pakai default). */
+  const [attemptStatus, setAttemptStatus] = useState<AttemptStatus | null>(null);
 
   const [loading, setLoading] = useState(true);
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -93,6 +95,10 @@ export default function ExamPage() {
         setDurationMin(ex.config.duration || 60);
         setQuestionCount(ex.questionCount ?? ex.questions?.length ?? 0);
         setSecurity(securityFromExamConfig(ex.config));
+        // Status attempt murid: menentukan label & aksi tombol di preflight.
+        void sessionsApi.attemptStatus(examId).then((st) => {
+          if (!cancelled && st) setAttemptStatus(st);
+        });
         setPhase('preflight');
       } catch (e) {
         if (!cancelled) {
@@ -562,20 +568,52 @@ export default function ExamPage() {
               <span>
                 <strong className="text-foreground">Soal:</strong> {questionCount || '—'}
               </span>
-            </div>
-            <Button
-              className="w-full h-12 text-base"
-              onClick={beginExam}
-              disabled={loading}
-            >
-              {loading ? (
-                <Loader2 className="animate-spin w-5 h-5" />
-              ) : security.requireFullscreen ? (
-                'Fullscreen & mulai ujian'
-              ) : (
-                'Mulai ujian'
+              {attemptStatus && (
+                <span>
+                  <strong className="text-foreground">Percobaan:</strong>{' '}
+                  {attemptStatus.unlimited
+                    ? `${attemptStatus.attemptsUsed} (tanpa batas)`
+                    : `${attemptStatus.attemptsUsed}/${attemptStatus.maxAttempts || '∞'}`}
+                </span>
               )}
-            </Button>
+            </div>
+            {attemptStatus && !attemptStatus.canStart ? (
+              <>
+                <Alert>
+                  <AlertDescription>
+                    Batas percobaan tercapai ({attemptStatus.attemptsUsed}/
+                    {attemptStatus.maxAttempts}). Anda sudah menyelesaikan ujian ini
+                    {typeof attemptStatus.score === 'number' ? ` dengan nilai ${attemptStatus.score}` : ''}.
+                  </AlertDescription>
+                </Alert>
+                <Button
+                  className="w-full h-12 text-base"
+                  onClick={() =>
+                    attemptStatus.resultId
+                      ? router.push(`/student/results/${attemptStatus.resultId}`)
+                      : router.push('/student/dashboard')
+                  }
+                >
+                  Lihat Hasil
+                </Button>
+              </>
+            ) : (
+              <Button
+                className="w-full h-12 text-base"
+                onClick={beginExam}
+                disabled={loading}
+              >
+                {loading ? (
+                  <Loader2 className="animate-spin w-5 h-5" />
+                ) : attemptStatus?.inProgress ? (
+                  'Lanjutkan ujian'
+                ) : security.requireFullscreen ? (
+                  'Fullscreen & mulai ujian'
+                ) : (
+                  'Mulai ujian'
+                )}
+              </Button>
+            )}
           </CardContent>
         </Card>
       </div>

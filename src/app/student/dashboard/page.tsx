@@ -23,7 +23,7 @@ import { formatGradeLabel } from '@/lib/constants/grades';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { dashboardApi } from '@/lib/api';
+import { dashboardApi, sessionsApi, type AttemptStatus } from '@/lib/api';
 import type { Exam, ExamResult } from '@/lib/types';
 
 export default function StudentDashboardPage() {
@@ -34,6 +34,8 @@ export default function StudentDashboardPage() {
   const [recentResults, setRecentResults] = useState<ExamResult[]>([]);
   const [averageScore, setAverageScore] = useState(0);
   const [totalTaken, setTotalTaken] = useState(0);
+  /** Status attempt per ujian (exam id → status), untuk tombol Mulai/Lanjutkan/Lihat Hasil. */
+  const [attemptStatuses, setAttemptStatuses] = useState<Record<string, AttemptStatus>>({});
 
   useEffect(() => {
     if (!user?.id) return;
@@ -46,6 +48,15 @@ export default function StudentDashboardPage() {
           setRecentResults(d.completedExams);
           setAverageScore(d.averageScore);
           setTotalTaken(d.totalExamsTaken);
+          // Ambil status attempt tiap ujian (paralel) untuk label tombol yang benar.
+          void Promise.all(
+            d.upcomingExams.map(async (ex) => [ex.id, await sessionsApi.attemptStatus(ex.id)] as const)
+          ).then((entries) => {
+            if (cancelled) return;
+            const map: Record<string, AttemptStatus> = {};
+            for (const [id, st] of entries) if (id && st) map[id] = st;
+            setAttemptStatuses(map);
+          });
         }
       } catch (e) {
         console.error(e);
@@ -219,14 +230,48 @@ export default function StudentDashboardPage() {
                         )}
                       </div>
 
-                      <Button
-                        size="lg"
-                        className="gap-2"
-                        onClick={() => router.push(`/exam/${exam.id}`)}
-                      >
-                        <Play className="w-4 h-4" />
-                        Start Exam
-                      </Button>
+                      {(() => {
+                        const st = attemptStatuses[exam.id];
+                        if (st && !st.canStart) {
+                          return (
+                            <Button
+                              size="lg"
+                              variant="outline"
+                              className="gap-2"
+                              onClick={() =>
+                                st.resultId
+                                  ? router.push(`/student/results/${st.resultId}`)
+                                  : router.push(`/exam/${exam.id}`)
+                              }
+                            >
+                              <Award className="w-4 h-4" />
+                              Lihat Hasil
+                            </Button>
+                          );
+                        }
+                        if (st?.inProgress) {
+                          return (
+                            <Button
+                              size="lg"
+                              className="gap-2"
+                              onClick={() => router.push(`/exam/${exam.id}`)}
+                            >
+                              <Play className="w-4 h-4" />
+                              Lanjutkan
+                            </Button>
+                          );
+                        }
+                        return (
+                          <Button
+                            size="lg"
+                            className="gap-2"
+                            onClick={() => router.push(`/exam/${exam.id}`)}
+                          >
+                            <Play className="w-4 h-4" />
+                            Start Exam
+                          </Button>
+                        );
+                      })()}
                     </div>
                   </CardContent>
                 </Card>

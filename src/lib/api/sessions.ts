@@ -49,6 +49,18 @@ export interface SubmitAnswerRequest {
   answer: string;
 }
 
+/** Status percobaan murid pada satu ujian (untuk tombol "Mulai/Lanjutkan/Lihat Hasil"). */
+export interface AttemptStatus {
+  attemptsUsed: number;
+  maxAttempts: number;
+  unlimited: boolean;
+  inProgress: boolean;
+  canStart: boolean;
+  sessionId: string;
+  resultId?: string;
+  score?: number | null;
+}
+
 export const sessionsApi = {
   start: async (data: StartSessionRequest): Promise<StartSessionResponse> => {
     const raw = await post<{
@@ -101,6 +113,25 @@ export const sessionsApi = {
 
   get: async (id: string): Promise<unknown> => {
     return get(`/sessions/${id}`);
+  },
+
+  /** Status attempt murid untuk satu ujian. null bila tidak tersedia (mis. bukan murid). */
+  attemptStatus: async (examId: string): Promise<AttemptStatus | null> => {
+    try {
+      const raw = await get<Record<string, unknown>>(`/exams/${examId}/attempt-status`);
+      return {
+        attemptsUsed: Number(raw.attempts_used ?? 0),
+        maxAttempts: Number(raw.max_attempts ?? 0),
+        unlimited: Boolean(raw.unlimited),
+        inProgress: Boolean(raw.in_progress),
+        canStart: Boolean(raw.can_start),
+        sessionId: String(raw.session_id ?? ''),
+        resultId: raw.result_id ? String(raw.result_id) : undefined,
+        score: raw.score != null ? Number(raw.score) : null,
+      };
+    } catch {
+      return null;
+    }
   },
 
   submitAnswer: async (id: string, data: SubmitAnswerRequest): Promise<void> => {
