@@ -489,20 +489,21 @@ Correct answer: $f'(x) = 6x - 4$`;
   }, []);
 
   /** Contoh soal bertahap: tiap langkah ditulis "Langkah N: instruksi | Kunci: jawaban".
-   *  Kunci sengaja singkat (angka/huruf saja) agar murid cukup mengisi satu nilai per langkah. */
-  const sampleTextStepByStep = `1. Tentukan nilai x dari persamaan 3x + 5 = 20. Isi setiap langkah dengan angka saja.
-Langkah 1: Kurangkan kedua ruas dengan 5, sehingga 3x = .... | Kunci: 15
-Langkah 2: Bagi kedua ruas dengan 3, sehingga x = .... | Kunci: 5
+   *  Kunci sengaja singkat (angka/huruf saja) agar murid cukup mengisi satu nilai per langkah.
+   *  Langkah yang diakhiri "(A. …  B. …  C. …)" tampil sebagai pilihan ganda; kuncinya hurufnya. */
+  const sampleTextStepByStep = `1. Tentukan nilai x dari persamaan 3x + 5 = 20. Pilih jawaban yang benar di setiap langkah.
+Langkah 1: Kurangkan kedua ruas dengan 5, sehingga 3x = .... (A. 15  B. 25  C. 4) | Kunci: A
+Langkah 2: Bagi kedua ruas dengan 3, sehingga x = .... (A. 3  B. 5  C. 45) | Kunci: B
 
 2. Selesaikan sistem persamaan x + y = 10 dan x − y = 4 dengan eliminasi. Isi setiap langkah dengan angka saja.
 Langkah 1: Jumlahkan kedua persamaan, sehingga 2x = .... | Kunci: 14
 Langkah 2: Bagi kedua ruas dengan 2, sehingga x = .... | Kunci: 7
 Langkah 3: Substitusikan x ke x + y = 10, sehingga y = .... | Kunci: 3
 
-3. Tentukan FPB dari 12 dan 18. Isi langkah 1 dan 2 dengan angka, langkah 3 dengan huruf.
+3. Tentukan FPB dari 12 dan 18. Langkah 1 dan 2 diisi angka, langkah 3 pilih jawaban.
 Langkah 1: Faktor prima yang sama dari 12 dan 18 adalah 2 dan .... | Kunci: 3
 Langkah 2: FPB = 2 × 3 = .... | Kunci: 6
-Langkah 3: Jadi FPB dari 12 dan 18 adalah .... (A. 3   B. 6   C. 36) Tulis hurufnya saja. | Kunci: B`;
+Langkah 3: Jadi FPB dari 12 dan 18 adalah .... (A. 3  B. 6  C. 36) | Kunci: B`;
 
   const sampleJsonImport = `[
   {
@@ -1624,7 +1625,7 @@ Langkah 3: Jadi FPB dari 12 dan 18 adalah .... (A. 3   B. 6   C. 36) Tulis huruf
                                               <div key={si} className="grid items-start gap-2 sm:grid-cols-[auto_1fr_1fr_auto]">
                                                 <span className="pt-2 text-sm font-medium">{si + 1}.</span>
                                                 <Input
-                                                  placeholder="Instruksi langkah"
+                                                  placeholder="Instruksi; pilihan opsional di akhir: (A. 3  B. 5  C. 15)"
                                                   value={instr}
                                                   onChange={(e) => {
                                                     const opts = [...steps];

@@ -35,6 +35,7 @@ import {
 import { OptionImageDisplay, QuestionStemWithImages } from '@/components/shared/question-image-display';
 import { MathText } from '@/components/shared/math-text';
 import { stripMediaMarkersFromText } from '@/lib/question-images';
+import { parseStepChoices } from '@/lib/step-choices';
 import { cn, formatCountdown, clampSeconds } from '@/lib/utils';
 import { Question } from '@/lib/types';
 import { examsApi, sessionsApi, type AttemptStatus, type SessionPart } from '@/lib/api';
@@ -1153,32 +1154,70 @@ function StepByStepAnswers({
   return (
     <div className="space-y-3">
       <p className="text-sm text-muted-foreground">
-        Kerjakan setiap langkah secara berurutan. Isi setiap kotak dengan <strong>jawaban singkat saja</strong>{' '}
-        berupa angka atau huruf (mis. <code>15</code> atau <code>B</code>), tanpa menuliskan cara atau satuan.
+        Kerjakan setiap langkah secara berurutan. Klik pilihan yang benar, atau isi kotak dengan{' '}
+        <strong>jawaban singkat saja</strong> berupa angka atau huruf (mis. <code>15</code> atau <code>B</code>),
+        tanpa menuliskan cara atau satuan.
       </p>
-      {steps.map((step, i) => (
-        <div key={i} className="rounded-xl border border-border bg-card p-3.5 sm:p-4">
-          <div className="flex items-start gap-3">
-            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary text-xs font-bold mt-0.5">
-              {i + 1}
-            </span>
-            <div className="flex-1 min-w-0 space-y-2">
-              <MathText as="p" className="text-[14px] sm:text-[15px] leading-relaxed">
-                {stripMediaMarkersFromText(step)}
-              </MathText>
-              <StepReferenceBadges step={step} currentStep={i + 1} totalSteps={steps.length} byStep={byStep} />
-              <Input
-                value={byStep[String(i + 1)] ?? ''}
-                onChange={(e) => update(i, e.target.value)}
-                placeholder="Angka/huruf saja"
-                aria-label={`Jawaban langkah ${i + 1}`}
-                autoComplete="off"
-                className="max-w-[12rem]"
-              />
+      {steps.map((step, i) => {
+        const parsed = parseStepChoices(step);
+        const current = byStep[String(i + 1)] ?? '';
+        return (
+          <div key={i} className="rounded-xl border border-border bg-card p-3.5 sm:p-4">
+            <div className="flex items-start gap-3">
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary text-xs font-bold mt-0.5">
+                {i + 1}
+              </span>
+              <div className="flex-1 min-w-0 space-y-2">
+                <MathText as="p" className="text-[14px] sm:text-[15px] leading-relaxed">
+                  {stripMediaMarkersFromText(parsed?.prompt ?? step)}
+                </MathText>
+                <StepReferenceBadges step={step} currentStep={i + 1} totalSteps={steps.length} byStep={byStep} />
+                {parsed ? (
+                  <div className="grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label={`Pilihan langkah ${i + 1}`}>
+                    {parsed.choices.map((c) => {
+                      const isSelected = current.trim().toUpperCase() === c.letter;
+                      return (
+                        <button
+                          key={c.letter}
+                          type="button"
+                          role="radio"
+                          aria-checked={isSelected}
+                          onClick={() => update(i, isSelected ? '' : c.letter)}
+                          className={cn(
+                            'flex items-start gap-2.5 rounded-lg border p-2.5 text-left text-[14px] sm:text-[15px] transition-all touch-manipulation',
+                            isSelected
+                              ? 'border-primary bg-primary/10 ring-1 ring-primary font-medium'
+                              : 'border-border hover:bg-muted/40 hover:border-primary/40'
+                          )}
+                        >
+                          <span
+                            className={cn(
+                              'flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-bold',
+                              isSelected ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'
+                            )}
+                          >
+                            {c.letter}
+                          </span>
+                          <MathText className="leading-relaxed pt-0.5">{c.text}</MathText>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <Input
+                    value={current}
+                    onChange={(e) => update(i, e.target.value)}
+                    placeholder="Angka/huruf saja"
+                    aria-label={`Jawaban langkah ${i + 1}`}
+                    autoComplete="off"
+                    className="max-w-[12rem]"
+                  />
+                )}
+              </div>
             </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

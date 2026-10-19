@@ -1265,7 +1265,7 @@ function QuestionBankPage({ initialSearch = '' }: { initialSearch?: string }) {
                           Langkah {si + 1}
                         </span>
                         <Input
-                          placeholder="Instruksi (mis. Berapa 5 x 4 = ....?)"
+                          placeholder="Instruksi, mis. 5 x 4 = .... (A. 9  B. 20  C. 54) — pilihan opsional"
                           value={step.instruction}
                           onChange={(e) =>
                             setNewQ((s) => ({
