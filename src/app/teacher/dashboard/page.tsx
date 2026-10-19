@@ -90,7 +90,7 @@ function buildActivity(exams: Exam[], results: ExamResult[]): ActivityItem[] {
 
 export default function TeacherDashboardPage() {
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, isLoading: authLoading } = useAuth();
   const [isLoading, setIsLoading] = useState(true);
   const [stats, setStats] = useState({
     totalExams: 0,
@@ -120,8 +120,8 @@ export default function TeacherDashboardPage() {
       setError('');
 
       try {
-        const dash = await dashboardApi.teacher(user.id);
-        const [examsData, resultsPage] = await Promise.all([
+        const [dash, examsData, resultsPage] = await Promise.all([
+          dashboardApi.teacher(user.id),
           examsApi.list({ limit: 10 }),
           resultsApi.list({ limit: 8 }).catch(() => null),
         ]);
@@ -261,17 +261,16 @@ export default function TeacherDashboardPage() {
     return 'Just now';
   };
 
-  if (isLoading) {
+  if (isLoading || authLoading) {
     return (
-      <div className="flex h-screen bg-background">
-        <TeacherNav />
+      <TeacherNav userName={user?.name} userAvatar={user?.avatar} hideGlobalSearch>
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center">
             <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-muted-foreground" />
             <p className="text-muted-foreground">Loading dashboard...</p>
           </div>
         </div>
-      </div>
+      </TeacherNav>
     );
   }
 

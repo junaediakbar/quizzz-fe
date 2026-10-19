@@ -91,13 +91,16 @@ export default function StudentDashboardPage() {
   }
   const hasAchievements = topScorerCount > 0 || currentStreak >= 3;
 
+  if (loading) {
+    return (
+      <div className="flex justify-center py-24">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
   return (
     <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6 sm:space-y-8 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
-        {loading && (
-          <div className="flex justify-center py-12">
-            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-          </div>
-        )}
         {/* Welcome Section */}
         <div className="flex items-center justify-between">
           <div>
