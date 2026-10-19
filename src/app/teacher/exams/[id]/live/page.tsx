@@ -131,7 +131,7 @@ export default function ExamLivePage({ params }: { params: Promise<{ id: string 
 
   return (
     <TeacherNav userName={user?.name} userAvatar={user?.avatar}>
-      <main className="container mx-auto px-4 py-6 space-y-6">
+      <main className="flex-1 min-h-0 overflow-auto container mx-auto px-4 py-6 space-y-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <Link href={`/teacher/exams`}>
