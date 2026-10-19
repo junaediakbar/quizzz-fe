@@ -61,11 +61,9 @@ import {
   attachImagesFromParserTemplate,
   attachUploadedPageImagesByQuestionMap,
 } from '@/lib/parser-image-attachments';
-import { QuestionStemWithImages, OptionImageDisplay } from '@/components/shared/question-image-display';
 import {
   imagesToApiPayload,
   normalizeImportQuestionsPayload,
-  stripMediaMarkersFromText,
   stripStandaloneMediaLines,
 } from '@/lib/question-images';
 import { buildParserInputFromPdf } from '@/lib/pdf-parser-input';
@@ -73,6 +71,7 @@ import { TeacherNav } from '@/components/shared/teacher-nav';
 import { toast } from 'sonner';
 import { MathPreview } from '@/components/shared/math-preview';
 import { MathText } from '@/components/shared/math-text';
+import { QuestionAnswerView } from '@/components/shared/question-answer-view';
 import type { DifficultyLevel, ParseResult, ParsedQuestion, QuestionType } from '@/lib/types';
 
 /** Soal hasil parse + id stabil untuk key, seleksi, dan reorder */
@@ -169,6 +168,19 @@ function parsedToCreate(q: ParsedQuestion): CreateQuestionRequest {
   };
 }
 
+/** Kunci jawaban yang mudah dibaca guru di bawah pratinjau tampilan murid. */
+function answerKeyLabel(q: ParsedQuestion): string {
+  const key = q.correctAnswer;
+  if (q.type === 'step-by-step') {
+    const keys = Array.isArray(key) ? key : [];
+    return keys.map((k, i) => `Langkah ${i + 1}: ${k || '-'}`).join(' · ');
+  }
+  const k = Array.isArray(key) ? key.join('; ') : String(key ?? '');
+  if (q.type === 'true-false') return k.toLowerCase() === 'true' ? 'Benar' : k.toLowerCase() === 'false' ? 'Salah' : k;
+  const idx = (q.options ?? []).indexOf(k);
+  return idx >= 0 ? `${String.fromCharCode(65 + idx)}. ${k}` : k;
+}
+
 export default function AIQuestionParserPage() {
   const router = useRouter();
   const [inputText, setInputText] = useState('');
@@ -192,6 +204,8 @@ export default function AIQuestionParserPage() {
   /** Kosong = anggap semua terpilih (sama perilaku checkbox sebelumnya) */
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [editingId, setEditingId] = useState<string | null>(null);
+  /** Jawaban coba-coba guru di pratinjau hasil parse (tidak disimpan). */
+  const [previewAnswers, setPreviewAnswers] = useState<Record<string, string>>({});
   const [sideBySide, setSideBySide] = useState(false);
 
   /** Dialog "Buat ujian langsung dari hasil parse" */
@@ -1780,58 +1794,19 @@ Langkah 3: Jadi FPB dari 12 dan 18 adalah .... (A. 3  B. 6  C. 36) | Kunci: B`;
                                     </div>
                                   ) : (
                                     <>
-                                      <QuestionStemWithImages
-                                        title={q.title}
-                                        content={q.content}
-                                        images={q.images}
-                                        imageUrls={q.imageUrls}
-                                        titleClassName="font-semibold"
-                                        contentClassName="text-sm text-muted-foreground whitespace-pre-wrap"
-                                      />
+                                      {/* Pratinjau persis tampilan murid; jawaban di sini tidak disimpan. */}
+                                      <div className="rounded-xl border bg-background p-4 sm:p-5">
+                                        <QuestionAnswerView
+                                          question={q}
+                                          value={previewAnswers[q.id] ?? ''}
+                                          onChange={(v) => setPreviewAnswers((prev) => ({ ...prev, [q.id]: v }))}
+                                        />
+                                      </div>
 
-                                      {q.type === 'step-by-step' && (q.options ?? []).length > 0 && (
-                                        <ol className="list-decimal space-y-1 pl-5 text-sm">
-                                          {(q.options ?? []).map((instr, si) => (
-                                            <li key={si}>
-                                              <MathText>{stripMediaMarkersFromText(instr)}</MathText>
-                                              <span className="ml-2 font-medium text-green-600 dark:text-green-400">
-                                                → {Array.isArray(q.correctAnswer) ? q.correctAnswer[si] : ''}
-                                              </span>
-                                            </li>
-                                          ))}
-                                        </ol>
-                                      )}
-
-                                      {q.type !== 'step-by-step' && q.options && q.options.length > 0 && (
-                                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                                          {q.options.map((option, i) => {
-                                            const isCorrect =
-                                              option === correctStr ||
-                                              (Array.isArray(q.correctAnswer) &&
-                                                q.correctAnswer.some((a) => a === option));
-                                            return (
-                                              <div
-                                                key={i}
-                                                className={cn(
-                                                  'flex flex-col gap-2 rounded-lg border p-2 text-sm',
-                                                  isCorrect
-                                                    ? 'border-green-500/50 bg-green-500/10 text-green-700 dark:text-green-400'
-                                                    : 'bg-muted/50'
-                                                )}
-                                              >
-                                                <div className="flex items-center gap-2">
-                                                  <span className="font-medium">{String.fromCharCode(97 + i)})</span>
-                                                  <MathText className="min-w-0 flex-1">
-                                                    {stripMediaMarkersFromText(option)}
-                                                  </MathText>
-                                                  {isCorrect && <CheckCircle2 className="h-4 w-4 shrink-0" />}
-                                                </div>
-                                                <OptionImageDisplay images={q.images} optionIndex={i} />
-                                              </div>
-                                            );
-                                          })}
-                                        </div>
-                                      )}
+                                      <div className="rounded-lg border border-green-500/40 bg-green-500/5 p-3 text-sm">
+                                        <span className="font-medium text-green-700 dark:text-green-400">Kunci jawaban: </span>
+                                        <MathText as="span">{answerKeyLabel(q) || '-'}</MathText>
+                                      </div>
 
                                       {q.explanation && (
                                         <div className="rounded-lg bg-blue-500/10 p-3">
