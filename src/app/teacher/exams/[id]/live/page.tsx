@@ -11,6 +11,9 @@ import { examsApi, type LiveExamResponse, type LiveStudentSession } from '@/lib/
 import type { Exam, Question } from '@/lib/types';
 import { ArrowLeft, Loader2, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
+import { MathText } from '@/components/shared/math-text';
+import { OptionImageDisplay, QuestionStemWithImages } from '@/components/shared/question-image-display';
+import { stripMediaMarkersFromText } from '@/lib/question-images';
 
 const POLL_MS = 3000;
 
@@ -234,18 +237,46 @@ export default function ExamLivePage({ params }: { params: Promise<{ id: string 
                     const text = displayAnswer(questionById.get(q.id), raw);
                     const answered = text !== '';
                     return (
-                      <div key={q.id} className="rounded-md border p-3">
+                      <div key={q.id} className="rounded-md border p-3 space-y-3">
                         <div className="flex items-start justify-between gap-2">
-                          <p className="text-sm font-medium">
-                            {i + 1}. {q.title || q.content}
-                          </p>
+                          <span className="text-sm font-semibold">{q.title || `Soal ${i + 1}`}</span>
                           <Badge variant={answered ? 'default' : 'outline'}>
                             {answered ? 'Terjawab' : 'Belum'}
                           </Badge>
                         </div>
-                        <p className="mt-2 text-sm whitespace-pre-wrap">
-                          {answered ? text : <span className="text-muted-foreground">— belum dijawab —</span>}
-                        </p>
+                        <QuestionStemWithImages
+                          content={q.content}
+                          images={q.images}
+                          imageUrls={q.imageUrls}
+                          titleClassName="text-sm font-medium"
+                          contentClassName="text-sm leading-relaxed"
+                        />
+                        {q.type === 'multiple-choice' && (q.options ?? []).length > 0 && (
+                          <ul className="space-y-1.5">
+                            {(q.options ?? []).map((option, idx) => (
+                              <li
+                                key={idx}
+                                className={`flex items-start gap-2 rounded border px-2.5 py-1.5 text-sm ${
+                                  raw === option ? 'border-primary bg-primary/10 font-medium' : ''
+                                }`}
+                              >
+                                <span className="font-semibold">{String.fromCharCode(65 + idx)}.</span>
+                                <div className="flex-1 min-w-0 space-y-1">
+                                  <MathText>{stripMediaMarkersFromText(option)}</MathText>
+                                  <OptionImageDisplay images={q.images} optionIndex={idx} />
+                                </div>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                        <div className="text-sm">
+                          <span className="text-muted-foreground">Jawaban murid: </span>
+                          {answered ? (
+                            <span className="whitespace-pre-wrap font-medium">{text}</span>
+                          ) : (
+                            <span className="text-muted-foreground">— belum dijawab —</span>
+                          )}
+                        </div>
                       </div>
                     );
                   })}
