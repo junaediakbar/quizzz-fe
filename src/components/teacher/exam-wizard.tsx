@@ -118,16 +118,16 @@ export function ExamWizard({ examId }: ExamWizardProps) {
   const [examConfig, setExamConfig] = useState<ExamConfig>({
     duration: 60,
     shuffleQuestions: false,
-    shuffleOptions: true,
-    showResults: 'after-review',
+    shuffleOptions: false,
+    showResults: 'immediate',
     allowReview: true,
     maxAttempts: 1,
     passingScore: 70,
-    securityEnabled: true,
+    securityEnabled: false,
     maxViolations: 3,
-    requireFullscreen: true,
-    blockCopyPaste: true,
-    detectFocusLoss: true,
+    requireFullscreen: false,
+    blockCopyPaste: false,
+    detectFocusLoss: false,
   });
 
   const steps: { id: WizardStep; label: string; description: string }[] = [
