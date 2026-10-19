@@ -802,7 +802,7 @@ Langkah 3: Substitusikan x ke persamaan pertama | Kunci: y = 3`;
           shuffleOptions: examForm.shuffleOptions,
           showResults: 'immediate',
           allowReview: true,
-          maxAttempts: 1,
+          maxAttempts: 3,
           passingScore: examForm.passingScore,
           securityEnabled: false,
           maxViolations: 3,

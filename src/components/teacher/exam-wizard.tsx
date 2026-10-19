@@ -121,7 +121,7 @@ export function ExamWizard({ examId }: ExamWizardProps) {
     shuffleOptions: false,
     showResults: 'immediate',
     allowReview: true,
-    maxAttempts: 1,
+    maxAttempts: 3,
     passingScore: 70,
     securityEnabled: false,
     maxViolations: 3,
