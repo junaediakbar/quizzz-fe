@@ -32,6 +32,12 @@ import {
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -197,7 +203,7 @@ export default function AIQuestionParserPage() {
     grade: '5',
     duration: 60,
     passingScore: 70,
-    shuffleOptions: true,
+    shuffleOptions: false,
     shuffleQuestions: false,
     publish: true,
   });
@@ -794,15 +800,15 @@ Langkah 3: Substitusikan x ke persamaan pertama | Kunci: y = 3`;
           duration: examForm.duration,
           shuffleQuestions: examForm.shuffleQuestions,
           shuffleOptions: examForm.shuffleOptions,
-          showResults: 'after-review',
+          showResults: 'immediate',
           allowReview: true,
           maxAttempts: 1,
           passingScore: examForm.passingScore,
-          securityEnabled: true,
+          securityEnabled: false,
           maxViolations: 3,
-          requireFullscreen: true,
-          blockCopyPaste: true,
-          detectFocusLoss: true,
+          requireFullscreen: false,
+          blockCopyPaste: false,
+          detectFocusLoss: false,
         },
         ...(partsPayload ? { parts: partsPayload } : { question_ids: questionIds }),
       });
@@ -978,18 +984,15 @@ Langkah 3: Substitusikan x ke persamaan pertama | Kunci: y = 3`;
               <Sparkles className="w-5 h-5 text-white" />
             </div>
             <div>
-              <h1 className="text-xl font-semibold">AI Question Parser</h1>
-              <p className="text-xs text-muted-foreground">Teks + gambar → soal terstruktur (AI vision bila ada gambar)</p>
+              <h1 className="text-xl font-semibold">Parser Soal</h1>
+              <p className="text-xs text-muted-foreground">Tempel soal → periksa hasil → simpan atau buat ujian</p>
             </div>
           </div>
           {inputMethod === 'text' ? (
-            <div className="flex items-center gap-3">
-              <span className="hidden lg:inline text-xs text-muted-foreground">Ctrl/⌘+S: parse ulang</span>
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-muted-foreground">Side by side</span>
-                <Switch checked={sideBySide} onCheckedChange={(v) => setSideBySide(Boolean(v))} />
-              </div>
-            </div>
+            <label className="flex items-center gap-2 text-sm text-muted-foreground">
+              Side by side
+              <Switch checked={sideBySide} onCheckedChange={(v) => setSideBySide(Boolean(v))} />
+            </label>
           ) : null}
         </header>
 
@@ -1006,15 +1009,8 @@ Langkah 3: Substitusikan x ke persamaan pertama | Kunci: y = 3`;
               {/* Input Section */}
               <Card className={cn(sideBySide && inputMethod === 'text' ? 'lg:col-start-1 lg:row-start-1' : '')}>
                 <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Sparkles className="w-5 h-5 text-primary" />
-                    Input Your Questions
-                  </CardTitle>
-                  <CardDescription>
-                    Tempel teks soal dan/atau lampirkan gambar (foto/screenshot/halaman cetak). Mode gambar memakai AI vision —
-                    aktifkan <code className="text-xs rounded bg-muted px-1">GEMINI_API_KEY</code> atau{' '}
-                    <code className="text-xs rounded bg-muted px-1">ZAI_API_KEY</code> di backend. Teks tetap bisa tanpa API.
-                  </CardDescription>
+                  <CardTitle>Masukkan soal</CardTitle>
+                  <CardDescription>Tempel teks, unggah file, atau impor JSON.</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <Tabs
@@ -1026,14 +1022,14 @@ Langkah 3: Substitusikan x ke persamaan pertama | Kunci: y = 3`;
                     }}
                   >
                     <TabsList className="grid w-full max-w-2xl grid-cols-3">
-                      <TabsTrigger value="text">Paste Text</TabsTrigger>
-                      <TabsTrigger value="file">Upload File</TabsTrigger>
-                      <TabsTrigger value="json">Import JSON</TabsTrigger>
+                      <TabsTrigger value="text">Tempel teks</TabsTrigger>
+                      <TabsTrigger value="file">Unggah file</TabsTrigger>
+                      <TabsTrigger value="json">Impor JSON</TabsTrigger>
                     </TabsList>
 
                     <TabsContent value="text" className="space-y-4">
                       <div>
-                        <Label htmlFor="question-input">Questions Text</Label>
+                        <Label htmlFor="question-input" className="sr-only">Teks soal</Label>
                         <Textarea
                           id="question-input"
                           placeholder="Paste soal di sini...&#10;&#10;Matematika pakai LaTeX: $\sqrt{25}$, $x^2$, $\frac{1}{2}$&#10;&#10;1. Nilai $\sqrt{48} + 3^2$ adalah ...&#10;a) $6\sqrt{2}$&#10;b) $4\sqrt{3} + 9$&#10;Correct answer: b"
@@ -1051,184 +1047,89 @@ Langkah 3: Substitusikan x ke persamaan pertama | Kunci: y = 3`;
                         ) : null}
                       </div>
 
-                      <div className="space-y-3 rounded-lg border border-border bg-muted/30 p-4">
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <Label className="flex items-center gap-2 text-base">
-                            <ImageIcon className="h-4 w-4" />
-                            Gambar soal (opsional)
-                          </Label>
-                          <div className="flex flex-wrap gap-2">
-                            <input
-                              type="file"
-                              accept="image/jpeg,image/png,image/webp,image/gif"
-                              multiple
-                              className="hidden"
-                              id="parser-parse-images"
-                              onChange={(e) => {
-                                void addParseImagesFromFiles(e.target.files);
-                                e.target.value = '';
-                              }}
-                            />
-                            <Button type="button" variant="outline" size="sm" asChild>
-                              <label htmlFor="parser-parse-images" className="cursor-pointer">
-                                <Upload className="mr-2 h-4 w-4" />
-                                Unggah gambar
-                              </label>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button type="button" variant="outline" size="sm" className="gap-1">
+                              <FileText className="h-4 w-4" />
+                              Muat contoh
+                              <ChevronDown className="h-4 w-4" />
                             </Button>
-                            {parseImages.length > 0 && (
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => {
-                                  setParseImages([]);
-                                  setPdfQuestionPageMap([]);
-                                }}
-                              >
-                                Hapus semua gambar
-                              </Button>
-                            )}
-                          </div>
-                        </div>
-                        <p className="text-xs text-muted-foreground space-y-1">
-                          <span className="block">
-                            Gambar mengikuti <strong>posisi di teks</strong>: sebelum teks soal = atas; setelah teks / sebelum opsi = bawah;
-                            setelah opsi = bawah (setelah pilihan); di antara soal 1 dan 2 = atas soal 2. Opsi:{' '}
-                            <code className="text-[11px]">a) teks [!https://…]</code> atau{' '}
-                            <code className="text-[11px]">[!option-b https://…]</code>. Eksplisit:{' '}
-                            <code className="text-[11px]">[!above url]</code>, <code className="text-[11px]">[!below url]</code>.
-                          </span>
-                          <span className="block">
-                            JPEG/PNG/WebP/GIF • maks. 8 gambar • ±4&nbsp;MB/gambar. Mode gambar butuh{' '}
-                            <code className="rounded bg-muted px-1 text-[11px]">GEMINI_API_KEY</code>/<code className="rounded bg-muted px-1 text-[11px]">ZAI_API_KEY</code>.
-                          </span>
-                        </p>
-                        {parseImages.length > 0 ? (
-                          <div className="flex flex-wrap gap-2">
-                            {parseImages.map((src, idx) => (
-                              <div
-                                key={`${idx}-${src.slice(0, 48)}`}
-                                className="relative h-20 w-20 overflow-hidden rounded-md border bg-background"
-                              >
-                                {/* eslint-disable-next-line @next/next/no-img-element */}
-                                <img src={src} alt="" className="h-full w-full object-cover" />
-                                <button
-                                  type="button"
-                                  onClick={() => removeParseImageAt(idx)}
-                                  className="absolute right-0.5 top-0.5 rounded bg-background/90 p-0.5 shadow hover:bg-destructive hover:text-destructive-foreground"
-                                  aria-label="Hapus gambar"
-                                >
-                                  <X className="h-3.5 w-3.5" />
-                                </button>
-                              </div>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="start">
+                            {[
+                              { label: 'Pilihan ganda sederhana', text: sampleText },
+                              { label: 'Per bagian (A/B/C)', text: sampleTextWithParts },
+                              { label: 'Format buku [PG-001]', text: sampleTextWithTags },
+                              { label: 'Notasi matematika', text: sampleTextWithMath },
+                              { label: 'Step-by-step', text: sampleTextStepByStep },
+                              { label: 'Dengan URL gambar', text: sampleTextWithImageUrl },
+                              { label: 'Dengan unggah gambar', text: sampleTextWithImagePlaceholder },
+                            ].map((s) => (
+                              <DropdownMenuItem key={s.label} onClick={() => setInputText(s.text)}>
+                                {s.label}
+                              </DropdownMenuItem>
                             ))}
-                          </div>
-                        ) : null}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                        <input
+                          type="file"
+                          accept="image/jpeg,image/png,image/webp,image/gif"
+                          multiple
+                          className="hidden"
+                          id="parser-parse-images"
+                          onChange={(e) => {
+                            void addParseImagesFromFiles(e.target.files);
+                            e.target.value = '';
+                          }}
+                        />
+                        <Button type="button" variant="outline" size="sm" asChild>
+                          <label htmlFor="parser-parse-images" className="cursor-pointer">
+                            <ImageIcon className="mr-2 h-4 w-4" />
+                            Lampirkan gambar
+                          </label>
+                        </Button>
+                        {parseImages.length > 0 && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              setParseImages([]);
+                              setPdfQuestionPageMap([]);
+                            }}
+                          >
+                            Hapus gambar
+                          </Button>
+                        )}
                       </div>
-
-                      <div className="flex flex-wrap gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          type="button"
-                          onClick={() => setInputText(sampleText)}
-                        >
-                          Contoh teks English
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          type="button"
-                          onClick={() => {
-                            setInputText(sampleTextWithImageUrl);
-                            toast.message('Contoh Indo + [!URL gambar] dimuat', {
-                              description:
-                                'Soal 1: atas + bawah teks. Soal 2: atas teks + gambar di opsi b). Lalu Parse.',
-                            });
-                          }}
-                        >
-                          Contoh Indo + [!URL gambar]
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          type="button"
-                          onClick={() => {
-                            setInputText(sampleTextWithImagePlaceholder);
-                            toast.message('Contoh Indo + [!Link Image] dimuat', {
-                              description:
-                                'Unggah 1 foto — penanda sebelum 1. = lampiran soal 1.',
-                            });
-                          }}
-                        >
-                          Contoh + upload gambar
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          type="button"
-                          onClick={() => {
-                            setInputText(sampleTextWithParts);
-                            toast.message('Contoh soal per bagian dimuat', {
-                              description:
-                                'Bagian A (pilihan ganda), Bagian B (isian singkat), Bagian C (uraian). Bagian ini otomatis jadi “part” di ujian.',
-                            });
-                          }}
-                        >
-                          Contoh soal per bagian (A/B/C)
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          type="button"
-                          onClick={() => {
-                            setInputText(sampleTextWithTags);
-                            toast.message('Contoh format buku dimuat', {
-                              description:
-                                'Penanda **[PG-001]** / **[IS-001]** / **[BS-001]**, opsi A., dan “- Kunci:”.',
-                            });
-                          }}
-                        >
-                          Contoh format buku [PG-001]
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          type="button"
-                          onClick={() => {
-                            setInputText(sampleTextWithMath);
-                            toast.message('Contoh notasi matematika dimuat', {
-                              description:
-                                'LaTeX inline $…$ dan display $$…$$ — akar, pecahan, pangkat, turunan. Lalu Parse.',
-                            });
-                          }}
-                        >
-                          Contoh notasi matematika
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          type="button"
-                          onClick={() => {
-                            setInputText(sampleTextStepByStep);
-                            toast.message('Contoh soal step-by-step dimuat', {
-                              description: 'Format: "Langkah N: instruksi | Kunci: jawaban". Lalu Parse.',
-                            });
-                          }}
-                        >
-                          Contoh soal step-by-step
-                        </Button>
-                      </div>
+                      {parseImages.length > 0 ? (
+                        <div className="flex flex-wrap gap-2">
+                          {parseImages.map((src, idx) => (
+                            <div
+                              key={`${idx}-${src.slice(0, 48)}`}
+                              className="relative h-20 w-20 overflow-hidden rounded-md border bg-background"
+                            >
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img src={src} alt="" className="h-full w-full object-cover" />
+                              <button
+                                type="button"
+                                onClick={() => removeParseImageAt(idx)}
+                                className="absolute right-0.5 top-0.5 rounded bg-background/90 p-0.5 shadow hover:bg-destructive hover:text-destructive-foreground"
+                                aria-label="Hapus gambar"
+                              >
+                                <X className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
                     </TabsContent>
 
                     <TabsContent value="file" className="space-y-4">
-                      <Alert className="border-primary/30 bg-primary/5">
-                        <AlertCircle className="h-4 w-4" />
-                        <AlertDescription>
-                          Upload <strong>PDF soal</strong> untuk ekstrak teks + gambar halaman secara otomatis, lalu AI parse.
-                          Tetap bisa tambah gambar manual atau .txt seperti sebelumnya.
-                        </AlertDescription>
-                      </Alert>
+                      <p className="text-sm text-muted-foreground">
+                        Isi PDF atau .txt akan dimasukkan ke tab Tempel teks, lalu klik Parse.
+                      </p>
                       <input
                         type="file"
                         accept="application/pdf,.pdf"
@@ -1239,83 +1140,40 @@ Langkah 3: Substitusikan x ke persamaan pertama | Kunci: y = 3`;
                           e.target.value = '';
                         }}
                       />
-                      <div className="flex flex-wrap gap-2">
-                        <Button type="button" asChild variant="secondary">
+                      <input
+                        type="file"
+                        accept=".txt,text/plain"
+                        className="hidden"
+                        id="parser-file"
+                        onChange={(e) => {
+                          const f = e.target.files?.[0];
+                          if (!f) return;
+                          setPdfQuestionPageMap([]);
+                          const reader = new FileReader();
+                          reader.onload = () => setInputText(String(reader.result || ''));
+                          reader.readAsText(f);
+                        }}
+                      />
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Button type="button" asChild>
                           <label htmlFor="parser-file-pdf" className="cursor-pointer">
                             <FileText className="mr-2 h-4 w-4" />
-                            Pilih PDF soal
+                            Pilih PDF
+                          </label>
+                        </Button>
+                        <Button type="button" variant="outline" asChild>
+                          <label htmlFor="parser-file" className="cursor-pointer">
+                            <Upload className="mr-2 h-4 w-4" />
+                            Pilih .txt
                           </label>
                         </Button>
                         {pdfQuestionPageMap.length > 0 && (
-                          <Badge variant="secondary">
-                            {pdfQuestionPageMap.length} pertanyaan terdeteksi (map halaman siap)
-                          </Badge>
+                          <Badge variant="secondary">{pdfQuestionPageMap.length} soal terdeteksi</Badge>
                         )}
-                      </div>
-                      <input
-                        type="file"
-                        accept="image/jpeg,image/png,image/webp,image/gif"
-                        multiple
-                        className="hidden"
-                        id="parser-file-images"
-                        onChange={(e) => {
-                          void addParseImagesFromFiles(e.target.files);
-                          e.target.value = '';
-                        }}
-                      />
-                      <div className="flex flex-wrap gap-2">
-                        <Button type="button" variant="outline" asChild>
-                          <label htmlFor="parser-file-images" className="cursor-pointer">
-                            <ImageIcon className="mr-2 h-4 w-4" />
-                            Tambahkan gambar ke antrian parse
-                          </label>
-                        </Button>
-                        {parseImages.length > 0 && (
-                          <Badge variant="secondary">{parseImages.length} gambar siap diparse</Badge>
-                        )}
-                      </div>
-                      <div className="border-2 border-dashed border-border rounded-lg p-12 text-center hover:border-primary/50 transition-colors">
-                        <Upload className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
-                        <p className="text-lg font-medium mb-2">Upload dokumen teks (.txt) tambahan</p>
-                        <p className="text-sm text-muted-foreground mb-4">
-                          Isi berkas akan dimasukkan ke kolom teks di tab Paste Text secara otomatis.
-                        </p>
-                        <input
-                          type="file"
-                          accept=".txt,text/plain"
-                          className="hidden"
-                          id="parser-file"
-                          onChange={(e) => {
-                            const f = e.target.files?.[0];
-                            if (!f) return;
-                            setPdfQuestionPageMap([]);
-                            const reader = new FileReader();
-                            reader.onload = () => setInputText(String(reader.result || ''));
-                            reader.readAsText(f);
-                          }}
-                        />
-                        <Button type="button" asChild>
-                          <label htmlFor="parser-file" className="cursor-pointer">
-                            <Upload className="w-4 h-4 mr-2" />
-                            Choose .txt file
-                          </label>
-                        </Button>
                       </div>
                     </TabsContent>
 
                     <TabsContent value="json" className="space-y-4">
-                      <Alert className="border-border bg-muted/40">
-                        <AlertCircle className="h-4 w-4" />
-                        <AlertDescription>
-                          Kirim array soal (field sama dengan API{' '}
-                          <code className="text-xs rounded px-1 bg-muted">POST /questions/import</code>
-                          ):{' '}
-                          <code className="text-xs rounded px-1 bg-muted">type</code>,{' '}
-                          <code className="text-xs rounded px-1 bg-muted">title</code>,{' '}
-                          <code className="text-xs rounded px-1 bg-muted">content</code>,{' '}
-                          <code className="text-xs rounded px-1 bg-muted">correct_answer</code>, dll.
-                        </AlertDescription>
-                      </Alert>
                       <div>
                         <Label htmlFor="json-import">JSON array atau {'{ "questions": [...] }'}</Label>
                         <Textarea
@@ -1353,12 +1211,7 @@ Langkah 3: Substitusikan x ke persamaan pertama | Kunci: y = 3`;
                     <div className="text-sm text-muted-foreground">
                       {inputMethod !== 'json' && (inputText.length > 0 || parseImages.length > 0) && (
                         <span>
-                          {inputText.length > 0 && (
-                            <>
-                              {inputText.length} karakter • ~{Math.ceil(inputText.split('\n').filter(Boolean).length / 5)}{' '}
-                              baris bermakna
-                            </>
-                          )}
+                          {inputText.length > 0 && <>{inputText.length} karakter</>}
                           {inputText.length > 0 && parseImages.length > 0 ? ' · ' : ''}
                           {parseImages.length > 0 && <>{parseImages.length} gambar lampiran</>}
                         </span>
@@ -1384,7 +1237,7 @@ Langkah 3: Substitusikan x ke persamaan pertama | Kunci: y = 3`;
                       ) : (
                         <>
                           <Sparkles className="w-4 h-4" />
-                          Parse Questions
+                          Parse soal
                         </>
                       )}
                     </Button>
@@ -1400,23 +1253,11 @@ Langkah 3: Substitusikan x ke persamaan pertama | Kunci: y = 3`;
                       <div className="flex items-center gap-3">
                         <Loader2 className="w-5 h-5 animate-spin text-primary" />
                         <div>
-                          <p className="font-medium">
-                            AI sedang menganalisis soal
-                            {parseImages.length > 0 ? ' & gambar' : ''}…
-                          </p>
-                          <p className="text-sm text-muted-foreground">
-                            {parseElapsed}s berjalan
-                            {parseImages.length > 0
-                              ? ' — mode gambar biasanya 20–90 detik.'
-                              : ' — biasanya 10–60 detik untuk model penalaran.'}
-                          </p>
+                          <p className="font-medium">Memproses soal…</p>
+                          <p className="text-sm text-muted-foreground">{parseElapsed}s berjalan</p>
                         </div>
                       </div>
                       <Progress value={parseProgressValue} className="h-2" />
-                      <p className="text-xs text-muted-foreground">
-                        Jangan tutup halaman ini. Kalau AI gagal/tidak tersedia, parser teks otomatis
-                        dipakai sebagai cadangan.
-                      </p>
                     </div>
                   </CardContent>
                 </Card>
@@ -1447,27 +1288,10 @@ Langkah 3: Substitusikan x ke persamaan pertama | Kunci: y = 3`;
                       <div>
                         <CardTitle className="flex items-center gap-2">
                           <CheckCircle2 className="w-5 h-5 text-green-500" />
-                          Parsed Questions
+                          Hasil parse
                         </CardTitle>
-                        <CardDescription className="flex flex-wrap items-center gap-2">
-                          <span>
-                            {workingQuestions.length} soal dalam daftar kerja — centang yang akan disimpan, edit lalu simpan ke
-                            bank.
-                          </span>
-                          {parseResult.engine && (
-                            <Badge
-                              variant="outline"
-                              className={
-                                parseResult.engine === 'ai'
-                                  ? 'bg-violet-500/10 text-violet-600 border-violet-500/30'
-                                  : 'bg-sky-500/10 text-sky-600 border-sky-500/30'
-                              }
-                            >
-                              {parseResult.engine === 'ai'
-                                ? 'Diparse dengan AI'
-                                : 'Diparse dengan parser manual (aturan)'}
-                            </Badge>
-                          )}
+                        <CardDescription>
+                          {workingQuestions.length} soal — centang yang dipakai, lalu simpan atau buat ujian.
                         </CardDescription>
                       </div>
                       <div className="flex flex-wrap items-center gap-2">
