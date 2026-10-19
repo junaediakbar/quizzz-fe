@@ -18,6 +18,7 @@ import {
   MoreVertical,
   Play,
   Edit,
+  Eye,
   Trash2,
   Loader2,
 } from 'lucide-react';
@@ -419,34 +420,46 @@ export default function TeacherDashboardPage() {
                           </p>
                         </div>
 
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0">
-                              <MoreVertical className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem
-                              onClick={() => router.push(`/teacher/results?exam=${exam.id}`)}
-                            >
-                              <BarChart3 className="w-4 h-4 mr-2" />
-                              Lihat hasil &amp; nilai
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onClick={() => router.push(`/teacher/exams/${exam.id}/edit`)}
-                            >
-                              <Edit className="w-4 h-4 mr-2" />
-                              Edit Ujian
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              className="text-destructive focus:text-destructive"
-                              onClick={() => openDeleteExam(exam)}
-                            >
-                              <Trash2 className="w-4 h-4 mr-2" />
-                              Hapus ujian
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-8"
+                            onClick={() => router.push(`/teacher/exams/${exam.id}/live`)}
+                          >
+                            <Eye className="h-4 w-4 sm:mr-1.5" />
+                            <span className="hidden sm:inline">Live monitoring</span>
+                            <span className="sr-only sm:hidden">Live monitoring</span>
+                          </Button>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0">
+                                <MoreVertical className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem
+                                onClick={() => router.push(`/teacher/results?exam=${exam.id}`)}
+                              >
+                                <BarChart3 className="w-4 h-4 mr-2" />
+                                Lihat hasil &amp; nilai
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() => router.push(`/teacher/exams/${exam.id}/edit`)}
+                              >
+                                <Edit className="w-4 h-4 mr-2" />
+                                Edit Ujian
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                className="text-destructive focus:text-destructive"
+                                onClick={() => openDeleteExam(exam)}
+                              >
+                                <Trash2 className="w-4 h-4 mr-2" />
+                                Hapus ujian
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
                       </div>
                     ))
                   )}
