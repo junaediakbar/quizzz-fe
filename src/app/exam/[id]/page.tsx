@@ -1153,7 +1153,8 @@ function StepByStepAnswers({
   return (
     <div className="space-y-3">
       <p className="text-sm text-muted-foreground">
-        Kerjakan setiap langkah secara berurutan, isi jawaban di kotak masing-masing.
+        Kerjakan setiap langkah secara berurutan. Isi setiap kotak dengan <strong>jawaban singkat saja</strong>{' '}
+        berupa angka atau huruf (mis. <code>15</code> atau <code>B</code>), tanpa menuliskan cara atau satuan.
       </p>
       {steps.map((step, i) => (
         <div key={i} className="rounded-xl border border-border bg-card p-3.5 sm:p-4">
@@ -1169,8 +1170,10 @@ function StepByStepAnswers({
               <Input
                 value={byStep[String(i + 1)] ?? ''}
                 onChange={(e) => update(i, e.target.value)}
-                placeholder={`Jawaban langkah ${i + 1}…`}
-                className="max-w-xs"
+                placeholder="Angka/huruf saja"
+                aria-label={`Jawaban langkah ${i + 1}`}
+                autoComplete="off"
+                className="max-w-[12rem]"
               />
             </div>
           </div>

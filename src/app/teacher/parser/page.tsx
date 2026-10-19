@@ -488,15 +488,21 @@ Correct answer: $f'(x) = 6x - 4$`;
     }
   }, []);
 
-  /** Contoh soal bertahap: tiap langkah ditulis "Langkah N: instruksi | Kunci: jawaban". */
-  const sampleTextStepByStep = `1. Tentukan nilai x dari persamaan 3x + 5 = 20. Kerjakan secara bertahap.
-Langkah 1: Kurangkan kedua ruas dengan 5 | Kunci: 3x = 15
-Langkah 2: Bagi kedua ruas dengan 3 | Kunci: x = 5
+  /** Contoh soal bertahap: tiap langkah ditulis "Langkah N: instruksi | Kunci: jawaban".
+   *  Kunci sengaja singkat (angka/huruf saja) agar murid cukup mengisi satu nilai per langkah. */
+  const sampleTextStepByStep = `1. Tentukan nilai x dari persamaan 3x + 5 = 20. Isi setiap langkah dengan angka saja.
+Langkah 1: Kurangkan kedua ruas dengan 5, sehingga 3x = .... | Kunci: 15
+Langkah 2: Bagi kedua ruas dengan 3, sehingga x = .... | Kunci: 5
 
-2. Selesaikan sistem persamaan x + y = 10 dan x − y = 4 dengan eliminasi.
-Langkah 1: Jumlahkan kedua persamaan untuk mengeliminasi y | Kunci: 2x = 14
-Langkah 2: Hitung nilai x | Kunci: x = 7
-Langkah 3: Substitusikan x ke persamaan pertama | Kunci: y = 3`;
+2. Selesaikan sistem persamaan x + y = 10 dan x − y = 4 dengan eliminasi. Isi setiap langkah dengan angka saja.
+Langkah 1: Jumlahkan kedua persamaan, sehingga 2x = .... | Kunci: 14
+Langkah 2: Bagi kedua ruas dengan 2, sehingga x = .... | Kunci: 7
+Langkah 3: Substitusikan x ke x + y = 10, sehingga y = .... | Kunci: 3
+
+3. Tentukan FPB dari 12 dan 18. Isi langkah 1 dan 2 dengan angka, langkah 3 dengan huruf.
+Langkah 1: Faktor prima yang sama dari 12 dan 18 adalah 2 dan .... | Kunci: 3
+Langkah 2: FPB = 2 × 3 = .... | Kunci: 6
+Langkah 3: Jadi FPB dari 12 dan 18 adalah .... (A. 3   B. 6   C. 36) Tulis hurufnya saja. | Kunci: B`;
 
   const sampleJsonImport = `[
   {
@@ -1627,7 +1633,7 @@ Langkah 3: Substitusikan x ke persamaan pertama | Kunci: y = 3`;
                                                   }}
                                                 />
                                                 <Input
-                                                  placeholder="Kunci jawaban langkah ini"
+                                                  placeholder="Kunci singkat: angka/huruf saja (mis. 15 atau B)"
                                                   value={keys[si] ?? ''}
                                                   onChange={(e) => {
                                                     const next = steps.map((_, i) => keys[i] ?? '');
