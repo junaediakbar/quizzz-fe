@@ -61,11 +61,9 @@ import {
   attachImagesFromParserTemplate,
   attachUploadedPageImagesByQuestionMap,
 } from '@/lib/parser-image-attachments';
-import { QuestionStemWithImages, OptionImageDisplay } from '@/components/shared/question-image-display';
 import {
   imagesToApiPayload,
   normalizeImportQuestionsPayload,
-  stripMediaMarkersFromText,
   stripStandaloneMediaLines,
 } from '@/lib/question-images';
 import { buildParserInputFromPdf } from '@/lib/pdf-parser-input';
@@ -73,6 +71,7 @@ import { TeacherNav } from '@/components/shared/teacher-nav';
 import { toast } from 'sonner';
 import { MathPreview } from '@/components/shared/math-preview';
 import { MathText } from '@/components/shared/math-text';
+import { QuestionAnswerView } from '@/components/shared/question-answer-view';
 import type { DifficultyLevel, ParseResult, ParsedQuestion, QuestionType } from '@/lib/types';
 
 /** Soal hasil parse + id stabil untuk key, seleksi, dan reorder */
@@ -169,6 +168,19 @@ function parsedToCreate(q: ParsedQuestion): CreateQuestionRequest {
   };
 }
 
+/** Kunci jawaban yang mudah dibaca guru di bawah pratinjau tampilan murid. */
+function answerKeyLabel(q: ParsedQuestion): string {
+  const key = q.correctAnswer;
+  if (q.type === 'step-by-step') {
+    const keys = Array.isArray(key) ? key : [];
+    return keys.map((k, i) => `Langkah ${i + 1}: ${k || '-'}`).join(' · ');
+  }
+  const k = Array.isArray(key) ? key.join('; ') : String(key ?? '');
+  if (q.type === 'true-false') return k.toLowerCase() === 'true' ? 'Benar' : k.toLowerCase() === 'false' ? 'Salah' : k;
+  const idx = (q.options ?? []).indexOf(k);
+  return idx >= 0 ? `${String.fromCharCode(65 + idx)}. ${k}` : k;
+}
+
 export default function AIQuestionParserPage() {
   const router = useRouter();
   const [inputText, setInputText] = useState('');
@@ -192,6 +204,8 @@ export default function AIQuestionParserPage() {
   /** Kosong = anggap semua terpilih (sama perilaku checkbox sebelumnya) */
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [editingId, setEditingId] = useState<string | null>(null);
+  /** Jawaban coba-coba guru di pratinjau hasil parse (tidak disimpan). */
+  const [previewAnswers, setPreviewAnswers] = useState<Record<string, string>>({});
   const [sideBySide, setSideBySide] = useState(false);
 
   /** Dialog "Buat ujian langsung dari hasil parse" */
@@ -488,15 +502,26 @@ Correct answer: $f'(x) = 6x - 4$`;
     }
   }, []);
 
-  /** Contoh soal bertahap: tiap langkah ditulis "Langkah N: instruksi | Kunci: jawaban". */
-  const sampleTextStepByStep = `1. Tentukan nilai x dari persamaan 3x + 5 = 20. Kerjakan secara bertahap.
-Langkah 1: Kurangkan kedua ruas dengan 5 | Kunci: 3x = 15
-Langkah 2: Bagi kedua ruas dengan 3 | Kunci: x = 5
+  /** Contoh soal bertahap: tiap langkah ditulis "Langkah N: instruksi | Kunci: jawaban".
+   *  Kunci sengaja singkat (angka/huruf saja) agar murid cukup mengisi satu nilai per langkah.
+   *  Langkah yang diakhiri "(A. …  B. …  C. …)" tampil sebagai pilihan ganda; kuncinya hurufnya.
+   *  Baris "Petunjuk: …" opsional; murid melihatnya lewat tombol "Lihat petunjuk". */
+  const sampleTextStepByStep = `1. Tentukan nilai x dari persamaan 3x + 5 = 20. Pilih jawaban yang benar di setiap langkah.
+Petunjuk: Pindahkan angka 5 ke ruas kanan terlebih dahulu, lalu bagi dengan 3.
+Langkah 1: Kurangkan kedua ruas dengan 5, sehingga 3x = .... (A. 15  B. 25  C. 4) | Kunci: A
+Langkah 2: Bagi kedua ruas dengan 3, sehingga x = .... (A. 3  B. 5  C. 45) | Kunci: B
 
-2. Selesaikan sistem persamaan x + y = 10 dan x − y = 4 dengan eliminasi.
-Langkah 1: Jumlahkan kedua persamaan untuk mengeliminasi y | Kunci: 2x = 14
-Langkah 2: Hitung nilai x | Kunci: x = 7
-Langkah 3: Substitusikan x ke persamaan pertama | Kunci: y = 3`;
+2. Selesaikan sistem persamaan x + y = 10 dan x − y = 4 dengan eliminasi. Isi setiap langkah dengan angka saja.
+Petunjuk: Saat dijumlahkan, y dan −y saling menghilangkan.
+Langkah 1: Jumlahkan kedua persamaan, sehingga 2x = .... | Kunci: 14
+Langkah 2: Bagi kedua ruas dengan 2, sehingga x = .... | Kunci: 7
+Langkah 3: Substitusikan x ke x + y = 10, sehingga y = .... | Kunci: 3
+
+3. Tentukan FPB dari 12 dan 18. Langkah 1 dan 2 diisi angka, langkah 3 pilih jawaban.
+Petunjuk: FPB adalah hasil kali faktor prima yang sama dari kedua bilangan.
+Langkah 1: Faktor prima yang sama dari 12 dan 18 adalah 2 dan .... | Kunci: 3
+Langkah 2: FPB = 2 × 3 = .... | Kunci: 6
+Langkah 3: Jadi FPB dari 12 dan 18 adalah .... (A. 3  B. 6  C. 36) | Kunci: B`;
 
   const sampleJsonImport = `[
   {
@@ -1618,7 +1643,7 @@ Langkah 3: Substitusikan x ke persamaan pertama | Kunci: y = 3`;
                                               <div key={si} className="grid items-start gap-2 sm:grid-cols-[auto_1fr_1fr_auto]">
                                                 <span className="pt-2 text-sm font-medium">{si + 1}.</span>
                                                 <Input
-                                                  placeholder="Instruksi langkah"
+                                                  placeholder="Instruksi; pilihan opsional di akhir: (A. 3  B. 5  C. 15)"
                                                   value={instr}
                                                   onChange={(e) => {
                                                     const opts = [...steps];
@@ -1627,7 +1652,7 @@ Langkah 3: Substitusikan x ke persamaan pertama | Kunci: y = 3`;
                                                   }}
                                                 />
                                                 <Input
-                                                  placeholder="Kunci jawaban langkah ini"
+                                                  placeholder="Kunci singkat: angka/huruf saja (mis. 15 atau B)"
                                                   value={keys[si] ?? ''}
                                                   onChange={(e) => {
                                                     const next = steps.map((_, i) => keys[i] ?? '');
@@ -1773,58 +1798,19 @@ Langkah 3: Substitusikan x ke persamaan pertama | Kunci: y = 3`;
                                     </div>
                                   ) : (
                                     <>
-                                      <QuestionStemWithImages
-                                        title={q.title}
-                                        content={q.content}
-                                        images={q.images}
-                                        imageUrls={q.imageUrls}
-                                        titleClassName="font-semibold"
-                                        contentClassName="text-sm text-muted-foreground whitespace-pre-wrap"
-                                      />
+                                      {/* Pratinjau persis tampilan murid; jawaban di sini tidak disimpan. */}
+                                      <div className="rounded-xl border bg-background p-4 sm:p-5">
+                                        <QuestionAnswerView
+                                          question={q}
+                                          value={previewAnswers[q.id] ?? ''}
+                                          onChange={(v) => setPreviewAnswers((prev) => ({ ...prev, [q.id]: v }))}
+                                        />
+                                      </div>
 
-                                      {q.type === 'step-by-step' && (q.options ?? []).length > 0 && (
-                                        <ol className="list-decimal space-y-1 pl-5 text-sm">
-                                          {(q.options ?? []).map((instr, si) => (
-                                            <li key={si}>
-                                              <MathText>{stripMediaMarkersFromText(instr)}</MathText>
-                                              <span className="ml-2 font-medium text-green-600 dark:text-green-400">
-                                                → {Array.isArray(q.correctAnswer) ? q.correctAnswer[si] : ''}
-                                              </span>
-                                            </li>
-                                          ))}
-                                        </ol>
-                                      )}
-
-                                      {q.type !== 'step-by-step' && q.options && q.options.length > 0 && (
-                                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                                          {q.options.map((option, i) => {
-                                            const isCorrect =
-                                              option === correctStr ||
-                                              (Array.isArray(q.correctAnswer) &&
-                                                q.correctAnswer.some((a) => a === option));
-                                            return (
-                                              <div
-                                                key={i}
-                                                className={cn(
-                                                  'flex flex-col gap-2 rounded-lg border p-2 text-sm',
-                                                  isCorrect
-                                                    ? 'border-green-500/50 bg-green-500/10 text-green-700 dark:text-green-400'
-                                                    : 'bg-muted/50'
-                                                )}
-                                              >
-                                                <div className="flex items-center gap-2">
-                                                  <span className="font-medium">{String.fromCharCode(97 + i)})</span>
-                                                  <MathText className="min-w-0 flex-1">
-                                                    {stripMediaMarkersFromText(option)}
-                                                  </MathText>
-                                                  {isCorrect && <CheckCircle2 className="h-4 w-4 shrink-0" />}
-                                                </div>
-                                                <OptionImageDisplay images={q.images} optionIndex={i} />
-                                              </div>
-                                            );
-                                          })}
-                                        </div>
-                                      )}
+                                      <div className="rounded-lg border border-green-500/40 bg-green-500/5 p-3 text-sm">
+                                        <span className="font-medium text-green-700 dark:text-green-400">Kunci jawaban: </span>
+                                        <MathText as="span">{answerKeyLabel(q) || '-'}</MathText>
+                                      </div>
 
                                       {q.explanation && (
                                         <div className="rounded-lg bg-blue-500/10 p-3">

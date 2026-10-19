@@ -1265,7 +1265,7 @@ function QuestionBankPage({ initialSearch = '' }: { initialSearch?: string }) {
                           Langkah {si + 1}
                         </span>
                         <Input
-                          placeholder="Instruksi (mis. Berapa 5 x 4?)"
+                          placeholder="Instruksi, mis. 5 x 4 = .... (A. 9  B. 20  C. 54) — pilihan opsional"
                           value={step.instruction}
                           onChange={(e) =>
                             setNewQ((s) => ({
@@ -1291,7 +1291,7 @@ function QuestionBankPage({ initialSearch = '' }: { initialSearch?: string }) {
                       <div className="flex items-center gap-2">
                         <span className="text-xs font-semibold text-muted-foreground w-14 shrink-0">Kunci</span>
                         <Input
-                          placeholder="Kunci jawaban langkah ini"
+                          placeholder="Kunci singkat: angka/huruf saja (mis. 15 atau B)"
                           value={step.answer}
                           onChange={(e) =>
                             setNewQ((s) => ({
