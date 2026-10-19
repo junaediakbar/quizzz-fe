@@ -47,7 +47,18 @@ function displayAnswer(q: Question | undefined, raw: string | undefined): string
     const idx = opts.findIndex((o) => o === raw);
     if (idx >= 0) return `${String.fromCharCode(65 + idx)}. ${opts[idx]}`;
   }
+  if (q.type === 'true-false') {
+    const v = raw.trim().toLowerCase();
+    if (v === 'true') return 'Benar';
+    if (v === 'false') return 'Salah';
+  }
   return raw;
+}
+
+/** Kunci jawaban sebagai teks (soal bertahap menyimpan beberapa kunci). */
+function answerKeyText(q: Question): string {
+  const key = q.correctAnswer;
+  return Array.isArray(key) ? key.join('; ') : String(key ?? '');
 }
 
 export default function ExamLivePage({ params }: { params: Promise<{ id: string }> }) {
@@ -253,29 +264,43 @@ export default function ExamLivePage({ params }: { params: Promise<{ id: string 
                         />
                         {q.type === 'multiple-choice' && (q.options ?? []).length > 0 && (
                           <ul className="space-y-1.5">
-                            {(q.options ?? []).map((option, idx) => (
-                              <li
-                                key={idx}
-                                className={`flex items-start gap-2 rounded border px-2.5 py-1.5 text-sm ${
-                                  raw === option ? 'border-primary bg-primary/10 font-medium' : ''
-                                }`}
-                              >
-                                <span className="font-semibold">{String.fromCharCode(65 + idx)}.</span>
-                                <div className="flex-1 min-w-0 space-y-1">
-                                  <MathText>{stripMediaMarkersFromText(option)}</MathText>
-                                  <OptionImageDisplay images={q.images} optionIndex={idx} />
-                                </div>
-                              </li>
-                            ))}
+                            {(q.options ?? []).map((option, idx) => {
+                              const isKey = answerKeyText(q) === option;
+                              return (
+                                <li
+                                  key={idx}
+                                  className={`flex items-start gap-2 rounded border px-2.5 py-1.5 text-sm ${
+                                    raw === option ? 'border-primary bg-primary/10 font-medium' : ''
+                                  } ${isKey ? 'border-green-600 ring-1 ring-green-600' : ''}`}
+                                >
+                                  <span className="font-semibold">{String.fromCharCode(65 + idx)}.</span>
+                                  <div className="flex-1 min-w-0 space-y-1">
+                                    <MathText>{stripMediaMarkersFromText(option)}</MathText>
+                                    <OptionImageDisplay images={q.images} optionIndex={idx} />
+                                  </div>
+                                  {isKey && (
+                                    <Badge className="bg-green-600/10 text-green-700 dark:text-green-400">Kunci</Badge>
+                                  )}
+                                </li>
+                              );
+                            })}
                           </ul>
                         )}
-                        <div className="text-sm">
-                          <span className="text-muted-foreground">Jawaban murid: </span>
-                          {answered ? (
-                            <span className="whitespace-pre-wrap font-medium">{text}</span>
-                          ) : (
-                            <span className="text-muted-foreground">— belum dijawab —</span>
-                          )}
+                        <div className="text-sm space-y-1">
+                          <div>
+                            <span className="text-muted-foreground">Jawaban murid: </span>
+                            {answered ? (
+                              <span className="whitespace-pre-wrap font-medium">{text}</span>
+                            ) : (
+                              <span className="text-muted-foreground">— belum dijawab —</span>
+                            )}
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground">Kunci jawaban: </span>
+                            <span className="whitespace-pre-wrap font-medium text-green-700 dark:text-green-400">
+                              {displayAnswer(q, answerKeyText(q)) || '-'}
+                            </span>
+                          </div>
                         </div>
                       </div>
                     );
