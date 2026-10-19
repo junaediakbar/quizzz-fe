@@ -21,3 +21,9 @@ export function parseStepChoices(step: string): StepChoices | null {
   if (choices.some((c) => !c.letter || !c.text)) return null;
   return { prompt: step.trim().slice(0, m.index).trim(), choices };
 }
+
+/** Membuang "| Kunci: …" / "| Jawaban: …" di akhir baris. Pengaman untuk teks yang tampil ke murid:
+ *  soal yang gagal di-parse sebagai step-by-step menyimpan baris langkah beserta kuncinya di teks soal. */
+export function stripAnswerKeys(text: string): string {
+  return text.replace(/[ \t]*\|[ \t]*(?:kunci(?:[ \t]*jawaban)?|jawaban)[ \t]*[:=].*$/gim, '');
+}

@@ -7,7 +7,7 @@ import { Lightbulb, Link2 } from 'lucide-react';
 import { OptionImageDisplay, QuestionStemWithImages } from '@/components/shared/question-image-display';
 import { MathText } from '@/components/shared/math-text';
 import { stripMediaMarkersFromText } from '@/lib/question-images';
-import { parseStepChoices } from '@/lib/step-choices';
+import { parseStepChoices, stripAnswerKeys } from '@/lib/step-choices';
 import { splitHint } from '@/lib/question-hint';
 import { cn } from '@/lib/utils';
 import type { Question } from '@/lib/types';
@@ -23,7 +23,8 @@ export function QuestionAnswerView({
   value: string;
   onChange: (value: string) => void;
 }) {
-  const { content, hint } = splitHint(question.content);
+  // Kunci jawaban tidak boleh pernah tampil ke murid, meski tersimpan di teks soal.
+  const { content, hint } = splitHint(stripAnswerKeys(question.content));
   /** Petunjuk yang sedang dibuka; dibandingkan dengan teksnya agar otomatis tertutup saat pindah soal. */
   const [openHint, setOpenHint] = useState<string | null>(null);
   const hintOpen = hint !== null && openHint === hint;

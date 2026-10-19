@@ -1,7 +1,16 @@
 // Jalankan: node --test src/lib/step-choices.test.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseStepChoices } from './step-choices.ts';
+import { parseStepChoices, stripAnswerKeys } from './step-choices.ts';
+
+test('stripAnswerKeys membuang kunci di akhir baris, teks lain utuh', () => {
+  assert.equal(
+    stripAnswerKeys('Tentukan x.\nLangkah 1: 12 ÷ 3 = .... | Kunci: 4\nLangkah 2: pilih (A. 3  B. 5) | kunci jawaban : B'),
+    'Tentukan x.\nLangkah 1: 12 ÷ 3 = ....\nLangkah 2: pilih (A. 3  B. 5)'
+  );
+  assert.equal(stripAnswerKeys('Nilai |x| = 3, jawaban: tulis angka'), 'Nilai |x| = 3, jawaban: tulis angka');
+  assert.equal(stripAnswerKeys('a | Jawaban= 7'), 'a');
+});
 
 test('mengenali pilihan A-C di akhir langkah', () => {
   assert.deepEqual(parseStepChoices('Bagi kedua ruas dengan 3, sehingga x = .... (A. 3  B. 5  C. 15)'), {
