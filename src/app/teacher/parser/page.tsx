@@ -174,7 +174,8 @@ export default function AIQuestionParserPage() {
   const [jsonImportText, setJsonImportText] = useState('');
   const [isParsing, setIsParsing] = useState(false);
   /** Mesin parsing: AI (otomatis dgn fallback) atau parser manual sistem. */
-  const [parseMode, setParseMode] = useState<ParseMode>('auto');
+  // Hanya parser aturan sistem (manual); AI tidak dipakai di halaman ini.
+  const parseMode: ParseMode = 'manual';
   /** Detik berjalan selama parse (AI bisa 10–60 detik) */
   const [parseElapsed, setParseElapsed] = useState(0);
   const [isSaving, setIsSaving] = useState(false);
@@ -1347,44 +1348,6 @@ Langkah 3: Substitusikan x ke persamaan pertama | Kunci: y = 3`;
                     </TabsContent>
                   </Tabs>
 
-                  {/* Pilihan mesin parsing: AI atau parser manual sistem */}
-                  <div className="rounded-lg border border-border bg-muted/30 p-3">
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                      <div>
-                        <Label className="text-sm">Mesin parsing</Label>
-                        <p className="text-xs text-muted-foreground">
-                          {parseMode === 'auto' &&
-                            'AI memproses soal; kalau AI gagal/tanpa API key, parser aturan sistem dipakai otomatis.'}
-                          {parseMode === 'ai' && 'Hanya AI yang dipakai (butuh API key di backend).'}
-                          {parseMode === 'manual' &&
-                            'Hanya parser aturan sistem — tanpa memanggil AI, hasil instan, tidak perlu API key.'}
-                        </p>
-                      </div>
-                      <Select
-                        items={{
-                          auto: 'AI (otomatis + cadangan)',
-                          ai: 'AI saja',
-                          manual: 'Manual (parser aturan sistem)',
-                        }}
-                        value={parseMode}
-                        onValueChange={(v) => setParseMode((v ?? 'auto') as ParseMode)}
-                      >
-                        <SelectTrigger className="w-full sm:w-[260px]" aria-label="Mesin parsing">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="auto">AI (otomatis + cadangan)</SelectItem>
-                          <SelectItem value="ai">AI saja</SelectItem>
-                          <SelectItem value="manual">Manual (parser aturan sistem)</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    {parseMode === 'manual' && parseImages.length > 0 && (
-                      <p className="mt-2 text-xs text-destructive">
-                        Parser manual tidak bisa membaca gambar. Pilih mode AI atau hapus lampiran gambar.
-                      </p>
-                    )}
-                  </div>
 
                   <div className="flex items-center justify-between pt-4 border-t">
                     <div className="text-sm text-muted-foreground">
