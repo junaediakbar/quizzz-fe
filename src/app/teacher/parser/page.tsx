@@ -504,17 +504,21 @@ Correct answer: $f'(x) = 6x - 4$`;
 
   /** Contoh soal bertahap: tiap langkah ditulis "Langkah N: instruksi | Kunci: jawaban".
    *  Kunci sengaja singkat (angka/huruf saja) agar murid cukup mengisi satu nilai per langkah.
-   *  Langkah yang diakhiri "(A. …  B. …  C. …)" tampil sebagai pilihan ganda; kuncinya hurufnya. */
+   *  Langkah yang diakhiri "(A. …  B. …  C. …)" tampil sebagai pilihan ganda; kuncinya hurufnya.
+   *  Baris "Petunjuk: …" opsional; murid melihatnya lewat tombol "Lihat petunjuk". */
   const sampleTextStepByStep = `1. Tentukan nilai x dari persamaan 3x + 5 = 20. Pilih jawaban yang benar di setiap langkah.
+Petunjuk: Pindahkan angka 5 ke ruas kanan terlebih dahulu, lalu bagi dengan 3.
 Langkah 1: Kurangkan kedua ruas dengan 5, sehingga 3x = .... (A. 15  B. 25  C. 4) | Kunci: A
 Langkah 2: Bagi kedua ruas dengan 3, sehingga x = .... (A. 3  B. 5  C. 45) | Kunci: B
 
 2. Selesaikan sistem persamaan x + y = 10 dan x − y = 4 dengan eliminasi. Isi setiap langkah dengan angka saja.
+Petunjuk: Saat dijumlahkan, y dan −y saling menghilangkan.
 Langkah 1: Jumlahkan kedua persamaan, sehingga 2x = .... | Kunci: 14
 Langkah 2: Bagi kedua ruas dengan 2, sehingga x = .... | Kunci: 7
 Langkah 3: Substitusikan x ke x + y = 10, sehingga y = .... | Kunci: 3
 
 3. Tentukan FPB dari 12 dan 18. Langkah 1 dan 2 diisi angka, langkah 3 pilih jawaban.
+Petunjuk: FPB adalah hasil kali faktor prima yang sama dari kedua bilangan.
 Langkah 1: Faktor prima yang sama dari 12 dan 18 adalah 2 dan .... | Kunci: 3
 Langkah 2: FPB = 2 × 3 = .... | Kunci: 6
 Langkah 3: Jadi FPB dari 12 dan 18 adalah .... (A. 3  B. 6  C. 36) | Kunci: B`;

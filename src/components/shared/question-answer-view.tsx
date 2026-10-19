@@ -1,11 +1,14 @@
 'use client';
 
+import { useState } from 'react';
+import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Link2 } from 'lucide-react';
+import { Lightbulb, Link2 } from 'lucide-react';
 import { OptionImageDisplay, QuestionStemWithImages } from '@/components/shared/question-image-display';
 import { MathText } from '@/components/shared/math-text';
 import { stripMediaMarkersFromText } from '@/lib/question-images';
 import { parseStepChoices } from '@/lib/step-choices';
+import { splitHint } from '@/lib/question-hint';
 import { cn } from '@/lib/utils';
 import type { Question } from '@/lib/types';
 
@@ -20,19 +23,46 @@ export function QuestionAnswerView({
   value: string;
   onChange: (value: string) => void;
 }) {
+  const { content, hint } = splitHint(question.content);
+  /** Petunjuk yang sedang dibuka; dibandingkan dengan teksnya agar otomatis tertutup saat pindah soal. */
+  const [openHint, setOpenHint] = useState<string | null>(null);
+  const hintOpen = hint !== null && openHint === hint;
+
   return (
     <>
       <div className="mb-6 sm:mb-8">
         <QuestionStemWithImages
           title={question.title}
-          content={question.content}
+          content={content}
           images={question.images}
           imageUrls={question.imageUrls}
           titleClassName="text-base sm:text-lg md:text-[18px] font-medium leading-relaxed mb-3 font-heading"
           contentClassName="text-[15px] sm:text-[16px] md:text-[18px] leading-relaxed text-foreground/90"
         />
+        {hint && (
+          <div className="mt-4 space-y-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              aria-expanded={hintOpen}
+              onClick={() => setOpenHint(hintOpen ? null : hint)}
+              className="border-amber-500/50 text-amber-700 hover:bg-amber-500/10 dark:text-amber-300"
+            >
+              <Lightbulb className="h-4 w-4 mr-1.5" />
+              {hintOpen ? 'Sembunyikan petunjuk' : 'Lihat petunjuk'}
+            </Button>
+            {hintOpen && (
+              <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-[14px] sm:text-[15px]">
+                <MathText as="p" className="whitespace-pre-wrap leading-relaxed">
+                  {hint}
+                </MathText>
+              </div>
+            )}
+          </div>
+        )}
       </div>
-    
+
       <div className="space-y-3">
         {question.type === 'multiple-choice' && question.options && (
           <div className="space-y-2.5">
