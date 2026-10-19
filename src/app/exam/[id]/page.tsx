@@ -91,16 +91,18 @@ export default function ExamPage() {
       setLoading(true);
       setMetaError('');
       try {
-        const ex = await examsApi.get(examId);
+        // Status attempt wajib diketahui sebelum preflight: tanpa itu tombol
+        // "Mulai ujian" muncul walau batas percobaan sudah tercapai.
+        const [ex, st] = await Promise.all([examsApi.get(examId), sessionsApi.attemptStatus(examId)]);
         if (cancelled) return;
+        if (!st) {
+          throw new Error('Status percobaan tidak dapat dimuat. Pastikan Anda login sebagai murid.');
+        }
         setExamTitle(ex.title);
         setDurationMin(ex.config.duration || 60);
         setQuestionCount(ex.questionCount ?? ex.questions?.length ?? 0);
         setSecurity(securityFromExamConfig(ex.config));
-        // Status attempt murid: menentukan label & aksi tombol di preflight.
-        void sessionsApi.attemptStatus(examId).then((st) => {
-          if (!cancelled && st) setAttemptStatus(st);
-        });
+        setAttemptStatus(st);
         setPhase('preflight');
       } catch (e) {
         if (!cancelled) {
