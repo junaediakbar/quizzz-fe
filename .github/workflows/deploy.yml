@@ -13,22 +13,52 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Pull, build, and reload on VPS
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Build
+        run: npm run build
+        env:
+          NEXT_PUBLIC_API_URL: ${{ vars.NEXT_PUBLIC_API_URL }}
+
+      # Standalone output doesn't include static assets; copy them in.
+      - name: Package
+        run: |
+          cp -r public .next/standalone/
+          cp -r .next/static .next/standalone/.next/
+          tar -czf fe.tgz -C .next/standalone .
+
+      - name: Upload to VPS
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          source: fe.tgz
+          target: /tmp
+
+      - name: Swap release and restart
         uses: appleboy/ssh-action@v1.2.0
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
-          port: ${{ secrets.VPS_PORT || 22 }}
-          command_timeout: 20m
           script: |
             set -e
             cd /opt/quizzz-fe
-            git fetch origin main
-            git reset --hard origin/main
-            npm ci
-            npm run build
-            chown -R quizzz:quizzz /opt/quizzz-fe
+            rm -rf new old
+            mkdir new
+            tar -xzf /tmp/fe.tgz -C new
+            rm /tmp/fe.tgz
+            chown -R quizzz:quizzz new
+            [ -d app ] && mv app old
+            mv new app
             systemctl restart quizzz-frontend
             sleep 3
             systemctl is-active quizzz-frontend
