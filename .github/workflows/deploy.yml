@@ -51,6 +51,56 @@ jobs:
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
             set -e
+
+            # One-time VPS setup; every step is idempotent.
+            NODE_MAJOR=$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0)
+            if [ "$NODE_MAJOR" -lt 20 ]; then
+              curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+              apt-get install -y nodejs
+            fi
+            id quizzz >/dev/null 2>&1 || useradd --system --no-create-home --shell /usr/sbin/nologin quizzz
+            if ss -tln | grep -q ':3000 ' && ! systemctl is-active -q quizzz-frontend; then
+              echo "Port 3000 is used by another process"; exit 1
+            fi
+            mkdir -p /opt/quizzz-fe
+            cat > /etc/systemd/system/quizzz-frontend.service <<'EOF'
+            [Unit]
+            Description=Quizzz Frontend (Next.js)
+            After=network.target
+
+            [Service]
+            User=quizzz
+            WorkingDirectory=/opt/quizzz-fe/app
+            Environment=NODE_ENV=production PORT=3000 HOSTNAME=127.0.0.1
+            ExecStart=/usr/bin/node server.js
+            Restart=always
+
+            [Install]
+            WantedBy=multi-user.target
+            EOF
+            systemctl daemon-reload
+            systemctl enable -q quizzz-frontend
+            if [ -d /etc/nginx/sites-available ] && [ ! -f /etc/nginx/sites-available/exampro.ai.id ]; then
+              cat > /etc/nginx/sites-available/exampro.ai.id <<'EOF'
+            server {
+                listen 80;
+                server_name exampro.ai.id www.exampro.ai.id;
+
+                location / {
+                    proxy_pass http://127.0.0.1:3000;
+                    proxy_http_version 1.1;
+                    proxy_set_header Host $host;
+                    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                    proxy_set_header X-Forwarded-Proto $scheme;
+                    proxy_set_header Upgrade $http_upgrade;
+                    proxy_set_header Connection "upgrade";
+                }
+            }
+            EOF
+              ln -sf /etc/nginx/sites-available/exampro.ai.id /etc/nginx/sites-enabled/exampro.ai.id
+              nginx -t && systemctl reload nginx
+            fi
+
             cd /opt/quizzz-fe
             rm -rf new old
             mkdir new
