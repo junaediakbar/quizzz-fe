@@ -23,12 +23,13 @@ jobs:
           command_timeout: 20m
           script: |
             set -e
-            # Non-interactive SSH doesn't load nvm from .bashrc.
-            [ -s "$HOME/.nvm/nvm.sh" ] && . "$HOME/.nvm/nvm.sh"
-            cd ~/quizzz-fe
+            cd /opt/quizzz-fe
             git fetch origin main
             git reset --hard origin/main
             npm ci
             npm run build
-            pm2 reload quizzz-fe || pm2 start npm --name quizzz-fe -- start -- -p 3000
-            pm2 save
+            chown -R quizzz:quizzz /opt/quizzz-fe
+            systemctl restart quizzz-frontend
+            sleep 3
+            systemctl is-active quizzz-frontend
+            curl -fsS -o /dev/null http://127.0.0.1:3000
