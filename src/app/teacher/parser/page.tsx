@@ -505,7 +505,9 @@ Correct answer: $f'(x) = 6x - 4$`;
   /** Contoh soal bertahap: tiap langkah ditulis "Langkah N: instruksi | Kunci: jawaban".
    *  Kunci sengaja singkat (angka/huruf saja) agar murid cukup mengisi satu nilai per langkah.
    *  Langkah yang diakhiri "(A. …  B. …  C. …)" tampil sebagai pilihan ganda; kuncinya hurufnya.
-   *  Baris "Petunjuk: …" opsional; murid melihatnya lewat tombol "Lihat petunjuk". */
+   *  Baris "Petunjuk: …" opsional; murid melihatnya lewat tombol "Lihat petunjuk".
+   *  Gambar memakai penanda yang sama dengan contoh URL gambar, mis. [!above url] sebelum nomor soal.
+   *  Gambar untuk satu langkah: baris [!langkah-N url] (sebaiknya tepat sebelum baris langkahnya). */
   const sampleTextStepByStep = `1. Tentukan nilai x dari persamaan 3x + 5 = 20. Pilih jawaban yang benar di setiap langkah.
 Petunjuk: Pindahkan angka 5 ke ruas kanan terlebih dahulu, lalu bagi dengan 3.
 Langkah 1: Kurangkan kedua ruas dengan 5, sehingga 3x = .... (A. 15  B. 25  C. 4) | Kunci: A
@@ -521,7 +523,18 @@ Langkah 3: Substitusikan x ke x + y = 10, sehingga y = .... | Kunci: 3
 Petunjuk: FPB adalah hasil kali faktor prima yang sama dari kedua bilangan.
 Langkah 1: Faktor prima yang sama dari 12 dan 18 adalah 2 dan .... | Kunci: 3
 Langkah 2: FPB = 2 × 3 = .... | Kunci: 6
-Langkah 3: Jadi FPB dari 12 dan 18 adalah .... (A. 3  B. 6  C. 36) | Kunci: B`;
+Langkah 3: Jadi FPB dari 12 dan 18 adalah .... (A. 3  B. 6  C. 36) | Kunci: B
+
+[!above ${sampleImageUrl}]
+4. Perhatikan gambar sudut di atas. Tentukan jenis dan batas besar sudutnya.
+Petunjuk: Bandingkan sudut pada gambar dengan sudut siku-siku (90°).
+Langkah 1: Sudut pada gambar lebih besar dari sudut siku-siku, jadi jenisnya .... (A. lancip  B. siku-siku  C. tumpul) | Kunci: C
+Langkah 2: Sudut tumpul besarnya lebih dari 90° dan kurang dari ....° | Kunci: 180
+
+5. Jawab setiap langkah berdasarkan gambar pada langkah tersebut.
+[!langkah-1 ${sampleImageUrl}]
+Langkah 1: Jenis sudut pada gambar adalah .... (A. lancip  B. siku-siku  C. tumpul) | Kunci: C
+Langkah 2: Besar sudut lurus adalah ....° | Kunci: 180`;
 
   const sampleJsonImport = `[
   {

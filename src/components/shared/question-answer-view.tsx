@@ -143,6 +143,7 @@ export function QuestionAnswerView({
         {question.type === 'step-by-step' && (
           <StepByStepAnswers
             steps={question.options ?? []}
+            images={question.images}
             value={value}
             onChange={onChange}
           />
@@ -156,10 +157,12 @@ export function QuestionAnswerView({
  *  Nilai disimpan sebagai JSON object {"1":"..","2":".."} di map jawaban. */
 function StepByStepAnswers({
   steps,
+  images,
   value,
   onChange,
 }: {
   steps: string[];
+  images?: Question['images'];
   value: string;
   onChange: (value: string) => void;
 }) {
@@ -204,6 +207,7 @@ function StepByStepAnswers({
                 <MathText as="p" className="text-[14px] sm:text-[15px] leading-relaxed">
                   {stripMediaMarkersFromText(parsed?.prompt ?? step)}
                 </MathText>
+                <OptionImageDisplay images={images} optionIndex={i} className="mt-0" />
                 <StepReferenceBadges step={step} currentStep={i + 1} totalSteps={steps.length} byStep={byStep} />
                 {parsed ? (
                   <div className="grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label={`Pilihan langkah ${i + 1}`}>

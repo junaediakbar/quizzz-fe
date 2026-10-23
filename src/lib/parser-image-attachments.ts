@@ -29,8 +29,10 @@ const numbered = /^\d+\.\s/;
 const placeholder = /^\[\s*(?:!\s*)?Link\s+Image\s*\]\s*$/i;
 const labeledUrl = /^\[\s*(?:!\s*)?Link\s+Image\s*\]\s*:\s*(https?:\/\/\S+)/i;
 const optionLine = /^[a-d][\).\)]\s/i;
+/** [!langkah-2 url] → gambar pada langkah ke-2 soal step-by-step (disimpan sebagai posisi option) */
+const stepMarker = /^\[\s*!\s*langkah\s*[-_\s]*(\d+)\s*:?\s*(https?:\/\/[^\]]+)\]\s*$/i;
 
-/** Ekstrak URL + posisi eksplisit: [!above url], [!below url], [!option-b url], [!url] */
+/** Ekstrak URL + posisi eksplisit: [!above url], [!below url], [!option-b url], [!langkah-2 url], [!url] */
 function parseImageMarkerLine(
   line: string
 ): { url: string; position?: QuestionImagePosition; optionIndex?: number } | { upload: true; position?: QuestionImagePosition; optionIndex?: number } | null {
@@ -51,6 +53,15 @@ function parseImageMarkerLine(
       url: optionOnly[2].trim().replace(/[),.;]+$/, ''),
       position: 'option',
       optionIndex: letter.charCodeAt(0) - 'a'.charCodeAt(0),
+    };
+  }
+
+  const step = stepMarker.exec(t);
+  if (step && Number(step[1]) >= 1) {
+    return {
+      url: step[2].trim().replace(/[),.;]+$/, ''),
+      position: 'option',
+      optionIndex: Number(step[1]) - 1,
     };
   }
 
@@ -94,7 +105,8 @@ function peelTrailingImageLines(lines: string[]): { block: string[]; leadingForN
       end--;
       continue;
     }
-    if (isStandaloneImageLine(lines[end - 1])) {
+    // Penanda langkah sudah menyebut langkahnya, jadi tetap milik soal ini walau di akhir blok.
+    if (isStandaloneImageLine(lines[end - 1]) && !stepMarker.test(t)) {
       leadingForNext.unshift(lines[end - 1]);
       end--;
     } else {

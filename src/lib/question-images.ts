@@ -113,6 +113,9 @@ export function uniqPushImage(images: QuestionImage[], img: QuestionImage) {
 
 const RE_OPTION_MARKER =
   /\[\s*!\s*option\s*[-_\s]*([a-d])\s*:?\s*(https?:\/\/[^\]]+)\]\s*/gi;
+/** Langkah soal step-by-step disimpan di options, jadi gambarnya memakai posisi option. */
+const RE_STEP_MARKER =
+  /\[\s*!\s*langkah\s*[-_\s]*(\d+)\s*:?\s*(https?:\/\/[^\]]+)\]\s*/gi;
 const RE_POSITION_MARKER =
   /\[\s*!\s*(above|below|after)\s*:?\s*(https?:\/\/[^\]]+)\]\s*/gi;
 const RE_PLAIN_MARKER = /\[\s*!\s*(https?:\/\/[^\]]+)\]\s*/gi;
@@ -135,6 +138,11 @@ export function extractMediaMarkersFromText(
   clean = clean.replace(RE_OPTION_MARKER, (_, letter: string, url: string) => {
     const idx = letter.toLowerCase().charCodeAt(0) - 'a'.charCodeAt(0);
     take({ url: url.trim(), position: 'option', optionIndex: idx });
+    return '';
+  });
+
+  clean = clean.replace(RE_STEP_MARKER, (_, n: string, url: string) => {
+    if (Number(n) >= 1) take({ url: url.trim(), position: 'option', optionIndex: Number(n) - 1 });
     return '';
   });
 

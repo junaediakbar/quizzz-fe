@@ -174,6 +174,7 @@ function AnswerReviewCard({
                         <XCircle className="w-4 h-4 text-destructive shrink-0" />
                       )}
                     </div>
+                    <OptionImageDisplay images={q?.images} optionIndex={sf.step - 1} className="mt-0 pl-7" />
                     <div className="flex flex-wrap gap-x-4 gap-y-1 pl-7 text-xs">
                       <span>
                         <span className="text-muted-foreground">Jawaban Anda: </span>
