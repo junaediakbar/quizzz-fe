@@ -228,6 +228,8 @@ export default function LoginPage() {
             </p>
           </div>
         )}
+
+        <p className="mt-6 text-center text-xs text-muted-foreground">{process.env.NEXT_PUBLIC_APP_VERSION}</p>
       </div>
     </div>
   );
